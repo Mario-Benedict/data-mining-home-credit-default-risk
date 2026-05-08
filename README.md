@@ -14,8 +14,8 @@ Before starting, make sure you have the following installed on your system:
 If you haven't already, clone this repository to your local machine and navigate into the directory:
 
 ```bash
-git clone [https://github.com/Mario-Benedict/data-mining-home-credit-default-risk.git](https://github.com/Mario-Benedict/data-mining-home-credit-default-risk.git)
-cd your-repo-name
+git clone https://github.com/Mario-Benedict/data-mining-home-credit-default-risk.git
+cd data-mining-home-credit-default-risk
 ```
 
 ### 2. Create a Virtual Environment
