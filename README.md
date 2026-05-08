@@ -14,7 +14,7 @@ Before starting, make sure you have the following installed on your system:
 If you haven't already, clone this repository to your local machine and navigate into the directory:
 
 ```bash
-git clone [https://github.com/your-username/your-repo-name.git](https://github.com/your-username/your-repo-name.git)
+git clone [https://github.com/Mario-Benedict/data-mining-home-credit-default-risk.git](https://github.com/Mario-Benedict/data-mining-home-credit-default-risk.git)
 cd your-repo-name
 ```
 
