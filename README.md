@@ -52,14 +52,13 @@ With the environment activated, install all required packages listed in the `req
 pip install -r requirements.txt
 ```
 
-## Running the Program
+## Running the Preprocessing Pipeline
 
-Make sure your virtual environment is still activated, then execute the main Python script to run the application:
+Make sure your virtual environment is still activated, then execute the pipeline Python script to run the application:
 
 ```bash
-python main.py
+python src/run_pipeline.py
 ```
-*(Note: Change `main.py` if your entry point script has a different name).*
 
 ## Deactivating the Environment
 
