@@ -52,6 +52,9 @@ With the environment activated, install all required packages listed in the `req
 pip install -r requirements.txt
 ```
 
+## Import the datasets
+Make sure to place the datasets in the `datasets` directory as specified in the `.gitignore` file. This directory is ignored by Git to prevent large files from being tracked. Copy the datasets from [Kaggle](https://www.kaggle.com/competitions/home-credit-default-risk/data) into the `datasets` folder.
+
 ## Running the Preprocessing Pipeline
 
 Make sure your virtual environment is still activated, then execute the pipeline Python script to run the application:
