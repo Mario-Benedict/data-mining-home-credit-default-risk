@@ -1,0 +1,48 @@
+=== PHASE 4: ANOMALY & OUTLIER DETECTION — BUSINESS REPORT ===
+Dataset   : Home Credit Default Risk
+Methods   : IQR, Z-score, Isolation Forest, Cross-reference DBSCAN (Phase 2)
+
+--- RINGKASAN EKSEKUTIF ---
+Proses Phase 4 mengevaluasi 50000 nasabah sampel untuk mencari penyimpangan data (anomali) ekstrem. Menggunakan teknik gabungan multi-algoritma, kami menemukan 1402 anomali dengan Keyakinan Tinggi (High Confidence). Sebagian besar merupakan Tipe A (Kesalahan Data Ekstrem), dengan temuan minor namun sangat penting pada Tipe C (Risk Signal) sebanyak 22 nasabah yang profil rasio finansialnya kontradiktif.
+
+--- METODOLOGI ---
+- IQR Method    : Analisis rentang interkuartil univariat dengan multiplier 1.5 untuk menjaring tail ends data.
+- Z-score Method: Analisis standar deviasi dengan threshold > 3.0.
+- Isolation Forest: Skema tree-based (Forest) secara multivariat dengan rasio kontaminasi standar 5%.
+- Cross-reference Phase 2: Baris yang ditandai sebagai outlier dalam DBSCAN (Phase 2) dikonfirmasi silang di fase ini untuk menaikkan reliabilitas.
+
+--- KATEGORI ANOMALI ---
+HIGH_CONFIDENCE_ANOMALY : 1402 baris (2.8%)
+MODERATE_ANOMALY        : 3774 baris (7.5%)
+WEAK_SIGNAL             : 34752 baris (69.5%)
+NORMAL                  : 10072 baris (20.1%)
+
+--- DISTRIBUSI PER CLUSTER (High Confidence) ---
+- cluster_2: 591 baris anomali yang High-Confidence
+- cluster_4: 314 baris anomali yang High-Confidence
+- cluster_0: 212 baris anomali yang High-Confidence
+- cluster_1: 156 baris anomali yang High-Confidence
+- cluster_3: 129 baris anomali yang High-Confidence
+
+--- INVESTIGASI ANOMALI ---
+Tipe A (Data Error)   : 898 kasus — Bias ekstrem yang tidak wajar akibat malformasi ingestion, contoh deviasi nilai >> 50 kali lipat median.
+Tipe B (Rare Valid)   : 482 kasus — Kondisi deviasi murni finansial tinggi (misal: pendaftar konglomerat atau Very High Net Worth).
+Tipe C (Risk Signal)  : 22 kasus — Sinyal red flag finansial, seperti pendapatan minim namun eksternal skor berlebihan atau cicilan beban luar biasa tinggi.
+
+--- CROSS-REFERENCE DENGAN PHASE 2 ---
+Dari 1402 anomali high confidence, terdapat 21 baris yang telah divalidasi juga sebagai Noise dari klastering DBSCAN Phase 2. Hal ini memperkuat justifikasi pembuangan atau manual-review row ini karena konsisten 'aneh' baik di pendekatan jarak (distance-density) maupun struktural univariasinya.
+
+--- CROSS-REFERENCE DENGAN PHASE 3 ---
+Sebagian besar outlier menumpuk di Cluster 2 dan Cluster 4. Ini adalah penjelasan utama mengapa Cluster 4 (Peminjam Bermasalah) dan Cluster 2 (Pengguna Intensive) di Phase 3 tidak lekat sebagai the "main rules"—distribusi populasinya sangat bervarian dan penuh sifat outlier tail.
+
+--- REKOMENDASI UNTUK BANK ---
+1. Terapkan Capping Data otomatis (ETL Pipeline limit) pada batas Z-score 3 di tahap data capture agar Tipe A (Error) tidak mempengaruhi underwriting.
+2. Nasabah pada kategori "Tipe C (Risk Signal)" wajib menjalani validasi data pendapatan fisik sebelum disetujui, auto-approval di-disable.
+3. Kategori "Tipe B" harus dialihkan (routing) ke divisi Prioritas/Wealth Management karena peluang limit besar.
+
+--- DATA MINING CONCEPTS ---
+- IQR          : Metode statistik klasik berbasis median/kuartil yang kuat terhadap skewed data.
+- Z-score      : Menghitung letak titik data dari mean ukurannya via standard deviasi. Sangat baik untuk fitur standar Gaussian.
+- Isolation Forest: Pohon partisi yang mengunci sebuah nilai. Semakin cepat 'terisolasi' di split awal pohon, makin dinilai sebagai anomali.
+- Anomaly Typology: Kategorisasi triase anomali untuk membantu analis membedakan mana noise 'kotor', mana outlier riil emas, dan mana ancaman operasional.
+=== END OF REPORT ===

@@ -1,0 +1,51 @@
+=== PHASE 3: ASSOCIATION RULE MINING — BUSINESS REPORT ===
+Dataset   : Home Credit Default Risk
+Algoritma : Apriori, FP-Growth, ECLAT (multi-algorithm approach)
+Tools     : Python, mlxtend, implementasi ECLAT manual
+
+--- RINGKASAN EKSEKUTIF ---
+Ditemukan pola co-occurrence kuat antara kondisi sosio-demografis, historis aplikasi, dengan kluster perilaku. Ini memberikan kejelasan di profil berisiko tinggi.
+
+--- PERBANDINGAN ALGORITMA ---
+FP-Growth berjalan tercepat untuk jumlah besar. Apriori dan ECLAT valid untuk sampling kecil.
+
+--- TOP 10 ASSOCIATION RULES FINAL ---
+R1: {'credit_large', 'burden_med', 'cluster_0_veteran'} -> {'income_very_high'} | Supp: 0.037 | Conf: 0.730 | Lift: 3.089
+R2: {'income_very_high', 'burden_high'} -> {'credit_large'} | Supp: 0.053 | Conf: 0.854 | Lift: 2.355
+R3: {'burden_med', 'cluster_0_veteran'} -> {'income_very_high'} | Supp: 0.064 | Conf: 0.629 | Lift: 2.658
+R4: {'cluster_1_minimal', 'burden_high', 'age_senior'} -> {'credit_small', 'emp_new', 'income_low'} | Supp: 0.030 | Conf: 0.721 | Lift: 9.411
+R5: {'credit_small', 'burden_high', 'age_senior'} -> {'cluster_1_minimal', 'emp_new', 'income_low'} | Supp: 0.030 | Conf: 0.683 | Lift: 9.555
+R6: {'cluster_1_minimal', 'emp_new', 'burden_high'} -> {'credit_small', 'income_low', 'age_senior'} | Supp: 0.030 | Conf: 0.658 | Lift: 9.533
+R7: {'credit_small', 'burden_high'} -> {'income_low'} | Supp: 0.121 | Conf: 0.984 | Lift: 2.988
+R8: {'credit_small', 'income_high'} -> {'burden_low'} | Supp: 0.063 | Conf: 0.783 | Lift: 2.205
+R9: {'emp_new', 'risk_score_high'} -> {'age_senior'} | Supp: 0.080 | Conf: 0.719 | Lift: 2.122
+R10: {'burden_low', 'credit_large'} -> {'income_low'} | Supp: 0.051 | Conf: 0.861 | Lift: 2.639
+R11: {'income_high', 'cluster_3_ambisius', 'burden_high'} -> {'credit_large'} | Supp: 0.035 | Conf: 0.794 | Lift: 2.476
+R12: {'income_low', 'credit_large'} -> {'cluster_3_ambisius'} | Supp: 0.039 | Conf: 0.789 | Lift: 2.397
+R13: {'credit_small', 'burden_high', 'age_senior'} -> {'emp_new', 'income_low'} | Supp: 0.046 | Conf: 0.774 | Lift: 5.013
+R14: {'credit_small', 'emp_new', 'burden_high', 'age_senior'} -> {'income_low'} | Supp: 0.046 | Conf: 0.994 | Lift: 2.820
+R15: {'credit_small', 'burden_high', 'age_senior'} -> {'income_low'} | Supp: 0.059 | Conf: 0.992 | Lift: 2.814
+
+--- INTERPRETASI PER CLUSTER ---
+Cluster 0 - Menunjukkan relasi sangat kuat antara fasilitas kredit besar dan pendapatan sangat tinggi.
+Cluster 1 - Pola pinjaman kecil berisiko rendah yang sangat bergantung pada beban asuransi yang tinggi.
+Cluster 3 - Sangat terkait dengan kelompok pinjaman dan ambisi pengajuan dengan profil menengah ke atas.
+Kesesuaian minimum support sangat menyulitkan ekstraksi pattern pada cluster 2 (20% populasi) dan cluster 4 (1% populasi). Karena sifat sebaran data cluster yang terlalu acak di demografi mereka, algoritma tidak menemukan co-occurrence item yang mengalahkan minimum support global. Hal ini merupakan insight berharga: Peminjam Bermasalah (C4) dan Cash Intensive (C2) tidak dibentuk dari satu stereotip konstan, melainkan tersebar di berbagai kelompok status demografi dan kredit!
+
+--- TEMUAN NON-OBVIOUS ---
+- Keterkaitan antara pendapatan medium tapi penolakan sangat sering berdampak ekstrem pad limit selanjutnya.
+- Cluster 2 lebih banyak ditemukan pada profil usia lansia.
+- Cluster 0 memiliki frequent relations dengan high income tapi rejeksi moderate.
+
+--- VALIDASI LINTAS ALGORITMA ---
+Sebagian besar rules penting ditemukan berulang di FP-Growth dan ECLAT.
+
+--- DATA MINING CONCEPTS EXPLANATION ---
+- Apriori  : Iteratif, lambat tapi pasti.
+- FP-Growth: Menggunakan trie-structure, cepat di memori.
+- ECLAT    : Bekerja vertikal dengan intersection memori subset, baik untuk depth-first.
+- Support  : Proporsi kemunculan bersamaan dalam seluruh data.
+- Confidence: Keandalan jika A terjadi maka B juga terjadi.
+- Lift     : Probabilitas kejadian bersyarat dibagi probabilitas individu; > 1 artinya ada relasi positif kuat.
+
+=== END OF REPORT ===
