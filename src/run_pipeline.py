@@ -10,15 +10,16 @@ Output: datasets/final/features_clustering.csv
   Ready for Phase 2 (K-Means, DBSCAN, Hierarchical clustering).
 
 Pipeline steps:
-    1  load       — read all CSV files
-    2  aggregate  — roll up 5 relational tables to SK_ID_CURR grain
-    3  merge      — stack train+test, left-join aggregated features
-    4  clean      — sentinel values, rare categories, XNA → NaN
-    5  missing    — missingness indicators + imputation
-    6  outliers   — winsorize / cap / bin social-circle delinquency
-    7  engineer   — derived ratios, log transforms, drop redundant cols
-    8  encode     — binary / ordinal / OHE all remaining categoricals
-    9  scale      — feature selection + StandardScaler → features_clustering.csv
+    1  load              — read all CSV files
+    2  aggregate         — roll up 5 relational tables to SK_ID_CURR grain
+    3  merge             — stack train+test, left-join aggregated features
+    4  clean             — sentinel values, rare categories, XNA → NaN
+    5  missing           — missingness indicators + imputation
+    6  outliers          — winsorize / cap / bin social-circle delinquency
+    7  engineer          — derived ratios, log transforms, drop redundant cols
+    8  encode            — binary / ordinal / OHE all remaining categoricals
+    9  scale             — feature selection + StandardScaler → features_clustering.csv
+   10  feature_selection — correlation + entropy (MI) report → preprocessing_report.txt
 """
 import os
 import sys
@@ -36,6 +37,7 @@ from pipeline import (
     step7_engineer,
     step8_encode,
     step9_scale,
+    step10_feature_selection,
 )
 from pipeline.utils import log
 
@@ -55,11 +57,13 @@ def main() -> None:
     engineered = step7_engineer.run(outlier_treated)
     encoded    = step8_encode.run(engineered)
     step9_scale.run(encoded)
+    step10_feature_selection.run()
 
     elapsed = time.time() - t0
     log("=" * 60)
     log(f"Pipeline complete in {elapsed:.1f}s")
     log("Output: datasets/final/features_clustering.csv")
+    log("        results/phase1_preprocessing/preprocessing_report.txt")
     log("=" * 60)
 
 

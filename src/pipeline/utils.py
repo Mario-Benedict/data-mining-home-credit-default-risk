@@ -2,10 +2,21 @@
 import sys
 from datetime import datetime
 
+# Ensure UTF-8 output on Windows consoles (handles arrows, em-dashes, etc.)
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 
 def log(msg: str, level: str = "INFO") -> None:
     ts = datetime.now().strftime("%H:%M:%S")
-    print(f"[{ts}] [{level}] {msg}", flush=True)
+    try:
+        print(f"[{ts}] [{level}] {msg}", flush=True)
+    except UnicodeEncodeError:
+        safe = msg.encode("ascii", errors="replace").decode("ascii")
+        print(f"[{ts}] [{level}] {safe}", flush=True)
 
 
 def log_shape(name: str, df) -> None:

@@ -4,3 +4,4 @@ __pycache__
 *.log
 dump
 venv
+results/phase4_anomaly/*.csv

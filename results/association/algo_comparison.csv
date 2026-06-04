@@ -1,5 +1,0 @@
-Algoritma,Sample Size,Jumlah Rules
-apriori,50K,1723
-fpgrowth,356K (full),1616
-eclat,50K,1643
-fpgrowth_per_cluster,per_cluster_subset,2026
