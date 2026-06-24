@@ -75,6 +75,11 @@ def build_preprocessing_report(
     lines.append("# Phase 1 — Preprocessing Report")
     lines.append("**Dataset:** Home Credit Default Risk")
     lines.append("")
+    lines.append("Laporan ini merangkum apa yang dilakukan pipeline terhadap 7 file CSV mentah dan")
+    lines.append("memberi bukti bahwa feature set akhir layak dipakai untuk mining: multikolinearitas")
+    lines.append("yang berbahaya sudah dibuang, dan daya pisah tiap fitur terhadap default diukur")
+    lines.append("dengan mutual information. Setiap keputusan merujuk ke temuan EDA, bukan selera.")
+    lines.append("")
     lines.append("---")
     lines.append("")
 
@@ -89,8 +94,8 @@ def build_preprocessing_report(
     lines.append("| `step5_missing` | Indikator missingness + imputasi (median/zero/mode) |")
     lines.append("| `step6_outliers` | Winsorize p99 + cap + bin DPD social-circle |")
     lines.append("| `step7_engineer` | Derived ratios + log transform + drop kolom redundan |")
-    lines.append("| `step8_encode` | Binary / ordinal / OHE pada kategorikal |")
-    lines.append("| `step9_scale` | StandardScaler pada fitur kontinu (binary tidak di-scale) |")
+    lines.append("| `step8_encode` | Binary / ordinal (pendidikan) / frequency (income, organization) — bukan OHE |")
+    lines.append("| `step9_scale` | StandardScaler pada fitur kontinu & ordinal; hanya flag {0,1} dibiarkan |")
     lines.append("| `step10_feature_selection` | Validasi feature selection — korelasi + entropy (MI) |")
     lines.append("")
     lines.append(f"> **Final Feature Set:** {n_features} fitur × {n_train_rows:,} baris train")
@@ -107,6 +112,28 @@ def build_preprocessing_report(
     lines.append("- `FLAG_EMP_PHONE` (r = -1.0 dgn DAYS_EMPLOYED setelah sentinel)")
     lines.append("- `FLAG_MOBIL` (near-constant)")
     lines.append("- `REGION_RATING_CLIENT` (r > 0.85 dgn varian _W_CITY)")
+    lines.append("")
+    lines.append("**Encoding kategorikal yang ramah-clustering (bukan OHE).** Variabel "
+                 "nominal sengaja TIDAK di-one-hot. Pada K-Means yang memakai jarak "
+                 "Euclidean, OHE memecah satu kolom menjadi banyak sumbu biner sparse "
+                 "yang membuat setiap kategori berjarak sama — padahal sebagian kategori "
+                 "jelas lebih mirip. Tiga variabel kategorikal diperlakukan sesuai sifatnya:")
+    lines.append("")
+    lines.append("- `NAME_EDUCATION_TYPE` → **ordinal 0–4** (Lower secondary … Academic "
+                 "degree). Jenjang pendidikan punya urutan nyata; satu integer terurut "
+                 "menjaga 'Higher education lebih dekat ke Incomplete higher daripada ke "
+                 "Lower secondary'.")
+    lines.append("- `NAME_INCOME_TYPE` → **frequency encoding** (`NAME_INCOME_TYPE_FREQ`). "
+                 "Nominal tanpa urutan; dipetakan ke seberapa umum kategori itu, menjadi "
+                 "satu sumbu 'umum ↔ langka'.")
+    lines.append("- `ORGANIZATION_TYPE` → **frequency encoding** (`ORGANIZATION_TYPE_FREQ`). "
+                 "12 sektor → satu sumbu, alih-alih 11 dummy sparse yang mendominasi jarak.")
+    lines.append("")
+    lines.append("Pendekatan ini juga menghapus sumber kolinearitas sempurna pada run lama "
+                 "(`FLAG_SENTINEL_EMPLOYED` ≡ `ORGANIZATION_TYPE_Unknown` ≡ "
+                 "`NAME_INCOME_TYPE_Pensioner`, r ≈ 1.0) yang muncul justru karena OHE pada "
+                 "kategori 'Unknown' yang berimpit dengan flag pensiunan. Pensiunan tetap "
+                 "teridentifikasi terpisah lewat `FLAG_SENTINEL_EMPLOYED`.")
     lines.append("")
     lines.append(f"**Pasangan |r| > 0.85 yang TERSISA di feature set final:** {len(high_corr)}")
     lines.append("")
@@ -151,9 +178,10 @@ def build_preprocessing_report(
     lines.append(f"- **Mean MI:** {mi_df['mutual_info'].mean():.5f}")
     lines.append(f"- **Median MI:** {mi_df['mutual_info'].median():.5f}")
     lines.append("")
-    lines.append("> **Catatan:** Fitur dengan MI rendah tidak serta-merta di-drop karena clustering")
-    lines.append("> (unsupervised) tidak selalu mengikuti sinyal supervised (TARGET).")
-    lines.append("> Skor MI berfungsi sebagai bukti formal memenuhi rubrik *'correlation + entropy'* (PDF kriteria).")
+    lines.append("Fitur dengan MI rendah tidak otomatis dibuang. Clustering bekerja tanpa label,")
+    lines.append("jadi fitur yang lemah memprediksi default bisa tetap penting untuk membedakan")
+    lines.append("perilaku nasabah. Skor MI di sini berfungsi sebagai audit: bukti terukur bahwa")
+    lines.append("seleksi fitur memakai ukuran entropy, bukan hanya korelasi linear.")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -189,8 +217,15 @@ def run() -> None:
     n_train = len(target_df)
     log(f"  application_train: {n_train:,} rows (TARGET available)")
 
-    train_features = features_df.iloc[:n_train].reset_index(drop=True)
-    train_target = target_df["TARGET"].reset_index(drop=True)
+    if "SK_ID_CURR" in features_df.columns:
+        # Robust ID-based alignment (no reliance on row order)
+        aligned = features_df.merge(target_df, on="SK_ID_CURR", how="inner")
+        train_target = aligned["TARGET"].reset_index(drop=True)
+        train_features = aligned.drop(columns=["SK_ID_CURR", "TARGET"]).reset_index(drop=True)
+    else:
+        # Fallback: positional alignment (train rows stacked first in step3)
+        train_features = features_df.iloc[:n_train].reset_index(drop=True)
+        train_target = target_df["TARGET"].reset_index(drop=True)
     log(f"  Aligned for MI: {train_features.shape[0]:,} train rows, {train_features.shape[1]} features")
 
     mi_df = compute_mutual_info(train_features, train_target)
@@ -204,7 +239,7 @@ def run() -> None:
     log(f"  Saved {corr_path} ({len(high_corr)} pairs |r|>0.85)")
 
     report = build_preprocessing_report(
-        n_features=features_df.shape[1],
+        n_features=train_features.shape[1],
         n_train_rows=n_train,
         mi_df=mi_df,
         high_corr=high_corr,

@@ -124,6 +124,10 @@ ORG_TYPE_MAP = {
     "Postal":                 "Utilities",
     "Cleaning":               "Utilities",
     "Emergency":              "Utilities",
+    # "XNA" never reaches this map in practice: step4 converts XNA -> NaN
+    # BEFORE applying the mapping, and step8 later fills that NaN with
+    # "Unknown". The entry stays here so the map is complete if anyone
+    # reuses it outside the pipeline order.
     "XNA":                    "Inapplicable",
     "Other":                  "Other",
 }
@@ -256,20 +260,54 @@ CLUSTERING_FEATURES = [
     "CC_SK_DPD_MEAN",
     "CC_AMT_BALANCE_MEAN",
     "CC_MONTHS_COUNT",
+
+    # ── Categorical, encoded for distance-based clustering (no OHE) ─────────
+    "NAME_EDUCATION_TYPE",         # ordinal 0–4 (education ladder); SES proxy
+    "NAME_INCOME_TYPE_FREQ",       # frequency-encoded income source (mainstream↔niche)
+    "ORGANIZATION_TYPE_FREQ",      # frequency-encoded employer sector
 ]
 
-# Categorical columns OHE-encoded for the clustering path (drop_first=True).
-# Every entry is justified by the EDA justification table:
-#   NAME_INCOME_TYPE        EDA §5, §10: rare cats grouped; 5 cats → 4 dummies
-#   NAME_EDUCATION_TYPE     SES proxy; 5 cats → 4 dummies
-#   DEF_30_CNT_SOCIAL_CIRCLE_BIN  EDA §14: behavioral sub-population; 3 cats → 2 dummies
-#   ORGANIZATION_TYPE       EDA §10: 58 → 12 macro-sectors → 11 dummies
-CLUSTER_OHE_COLS = [
-    "NAME_INCOME_TYPE",
-    "NAME_EDUCATION_TYPE",
-    "ORGANIZATION_TYPE",
-]
+# ── Categorical encoding for DISTANCE-BASED clustering ────────────────────
+# Why not one-hot encoding (OHE)?
+#   K-Means works on Euclidean distance. OHE turns one nominal column into N
+#   binary columns, which (a) inflates dimensionality with sparse axes, and
+#   (b) forces every pair of categories to sit at the SAME distance √2 apart,
+#   even when some categories are far more alike than others. For a 12-sector
+#   ORGANIZATION_TYPE that means ~11 extra axes that collectively outweigh a
+#   single standardized continuous feature. An earlier run also produced a
+#   perfectly collinear trio (FLAG_SENTINEL_EMPLOYED ≡ ORGANIZATION_TYPE_Unknown
+#   ≡ NAME_INCOME_TYPE_Pensioner, r ≈ 1.0) — a direct symptom of OHE on a
+#   nominal whose "missing" category coincides with another flag.
+#
+# Encoding chosen per variable, matched to what the variable actually is:
+
+# 1) ORDINAL — NAME_EDUCATION_TYPE has a real ladder (junior school → degree).
+#    A single ordered integer preserves "Higher education is closer to
+#    Incomplete higher than to Lower secondary", which OHE destroys.
+EDUCATION_ORDINAL = {
+    "Lower secondary":                0,
+    "Secondary / secondary special":  1,
+    "Incomplete higher":              2,
+    "Higher education":               3,
+    "Academic degree":                4,
+}
+# Fallback level if a value is missing/unseen: the population mode (Secondary).
+EDUCATION_DEFAULT_LEVEL = 1
+ORDINAL_ENCODE_COLS = {"NAME_EDUCATION_TYPE": EDUCATION_ORDINAL}
+
+# 2) FREQUENCY — NAME_INCOME_TYPE and ORGANIZATION_TYPE are nominal with no
+#    natural order. Frequency encoding maps each category to how common it is
+#    in the population, collapsing the whole variable into ONE continuous
+#    "mainstream ↔ niche" axis. It keeps the signal that matters for
+#    segmentation (typical vs unusual employment/income source) without the
+#    dimensionality blow-up. Computed on the full train+test pool (unsupervised,
+#    no leakage). Pensioners remain separately identified by
+#    FLAG_SENTINEL_EMPLOYED, so the residual overlap is small, not r≈1.0.
+FREQUENCY_ENCODE_COLS = {
+    "NAME_INCOME_TYPE":  "NAME_INCOME_TYPE_FREQ",
+    "ORGANIZATION_TYPE": "ORGANIZATION_TYPE_FREQ",
+}
 
 # Ordinal encoding for DEF_30_CNT_SOCIAL_CIRCLE_BIN (ordered: 0 < 1 < 2+).
-# OHE would discard the ordering; direct integer mapping preserves it.
+# Same principle as education: the ordering is real, OHE would discard it.
 DEF30_BIN_ORDINAL = {"0": 0, "1": 1, "2+": 2}

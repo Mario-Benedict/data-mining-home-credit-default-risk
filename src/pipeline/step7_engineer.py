@@ -22,7 +22,9 @@ Column drops:
   FLAG_EMP_PHONE                  (r = -1.0 with DAYS_EMPLOYED post-sentinel)
   FLAG_MOBIL                      (near-constant, all 1s)
   REGION_RATING_CLIENT            (r > 0.85 with REGION_RATING_CLIENT_W_CITY)
-  SK_ID_CURR                      (identifier, not a feature)
+  SK_ID_CURR is RETAINED as an identifier column (excluded from scaling
+  and feature selection in step9/step10) so downstream phases can trace
+  every cluster label / anomaly flag back to a real applicant.
   Original DAYS_* columns         (replaced by positive-year versions)
 """
 import numpy as np
@@ -73,11 +75,10 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
         + COLS_DROP_MEDI
         + COLS_DROP_REDUNDANT
         + DAYS_COLS            # replaced by YEARS_* above
-        + ["SK_ID_CURR"]
     )
     drop_cols = [c for c in drop_cols if c in df.columns]
     df = df.drop(columns=drop_cols)
-    log(f"  Dropped {len(drop_cols)} redundant/ID columns")
+    log(f"  Dropped {len(drop_cols)} redundant columns (SK_ID_CURR retained as identifier)")
 
     log_shape("step7_out", df)
     return df

@@ -1,22 +1,26 @@
 """
 Step 9 — Feature selection, NaN fill, StandardScaler → features_clustering.csv.
 
-1. Select  — keep only CLUSTERING_FEATURES + OHE-expanded columns
+1. Select  — keep SK_ID_CURR (identifier) + the CLUSTERING_FEATURES that exist
+             + the ordinal DEF_30 social-circle bin.
 2. Fill    — residual NaN → 0  (YEARS_EMPLOYED is NaN for sentinel rows;
-             FLAG_SENTINEL_EMPLOYED already encodes that, so 0 is correct)
-3. Scale   — StandardScaler on continuous features only
-             (binary / flag columns already in [0,1]; scaling them distorts
-             cluster-profile interpretability)
+             FLAG_SENTINEL_EMPLOYED already encodes that, so 0 is correct).
+3. Scale   — StandardScaler on everything EXCEPT true {0,1} binary flags.
+             Ordinal columns (education 0–4, DEF_30 bin 0–2) and the
+             frequency-encoded columns ARE scaled: without scaling their raw
+             range would silently out-weight the standardized features. Binary
+             flags stay in {0,1} so cluster profiles remain readable as
+             "share of the cluster that has this trait".
 
 Output: datasets/final/features_clustering.csv
-  Single fully-numeric file, no train/test split indicator.
-  Ready to feed directly into K-Means, DBSCAN, or Hierarchical clustering.
+  First column SK_ID_CURR is an identifier (not scaled, not a feature) so
+  Phase 2-5 outputs are traceable to real applicants.
 """
 import os
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
-from .config import OUTPUT_DIR, CLUSTERING_FEATURES, CLUSTER_OHE_COLS
+from .config import OUTPUT_DIR, CLUSTERING_FEATURES
 from .utils import log, log_shape
 
 
@@ -30,21 +34,13 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
     if missing_base:
         log(f"  WARNING — expected features not found (skipped): {missing_base}", "WARN")
 
-    ohe_cols = [
-        c for c in df.columns
-        if any(c.startswith(p + "_") for p in CLUSTER_OHE_COLS)
-    ]
+    # DEF_30_CNT_SOCIAL_CIRCLE_BIN is ordinal-encoded (int), kept alongside.
+    extra_encoded = [c for c in ["DEF_30_CNT_SOCIAL_CIRCLE_BIN"] if c in df.columns]
 
-    # DEF_30_CNT_SOCIAL_CIRCLE_BIN is ordinal-encoded (int), not OHE'd
-    extra_encoded = [
-        c for c in ["DEF_30_CNT_SOCIAL_CIRCLE_BIN"]
-        if c in df.columns
-    ]
-
-    select_cols = base_cols + extra_encoded + ohe_cols
+    select_cols = base_cols + extra_encoded
     feature_df = df[select_cols].copy()
     log(f"  Selected {len(select_cols)} features "
-        f"({len(base_cols)} base + {len(extra_encoded)} ordinal + {len(ohe_cols)} OHE)")
+        f"({len(base_cols)} base + {len(extra_encoded)} ordinal bin)")
 
     # ── 2. Fill residual NaN ───────────────────────────────────────────────
     nan_count = feature_df.isna().sum().sum()
@@ -52,17 +48,19 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
         feature_df = feature_df.fillna(0)
         log(f"  Filled {nan_count:,} residual NaN → 0")
 
-    # ── 3. StandardScale continuous features ──────────────────────────────
+    # ── 3. Scale everything except true {0,1} binary flags ────────────────
+    # Detection is by VALUE SET, not dtype: an int8 ordinal (0–4) is NOT
+    # binary and must be scaled, otherwise its range silently dominates.
     binary_cols = [
         c for c in feature_df.columns
-        if feature_df[c].dtype == np.int8
-        or set(feature_df[c].dropna().unique()).issubset({0, 1, 0.0, 1.0})
+        if set(pd.unique(feature_df[c].dropna())).issubset({0, 1, 0.0, 1.0})
     ]
     scale_cols = [
         c for c in feature_df.select_dtypes(include=[np.number]).columns
         if c not in binary_cols
     ]
-    log(f"  Scaling {len(scale_cols)} continuous cols; {len(binary_cols)} binary cols left as-is")
+    log(f"  Scaling {len(scale_cols)} continuous/ordinal cols; "
+        f"{len(binary_cols)} binary flags left as 0/1")
 
     scaler = StandardScaler()
     scaled_values = pd.DataFrame(
@@ -75,7 +73,10 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
         axis=1,
     )[select_cols]   # restore original column order
 
-    # ── 4. Save ───────────────────────────────────────────────────────────
+    # ── 4. Re-attach identifier and save ──────────────────────────────────
+    if "SK_ID_CURR" in df.columns:
+        feature_df.insert(0, "SK_ID_CURR", df["SK_ID_CURR"].astype(np.int64))
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     out_path = os.path.join(OUTPUT_DIR, "features_clustering.csv")
     feature_df.to_csv(out_path, index=False)

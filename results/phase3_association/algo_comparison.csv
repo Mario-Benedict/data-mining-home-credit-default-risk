@@ -1,5 +1,5 @@
 Algoritma,Sample,Rules
-apriori,50K,1248
-fpgrowth,50K,1248
-eclat,50K,1248
-fpgrowth_per_cluster,subset,1029
+apriori,"356,255",1212
+fpgrowth,"356,255",1212
+eclat,"356,255",1212
+fpgrowth_per_cluster,subset,1209

@@ -41,29 +41,100 @@ from pipeline import (
 )
 from pipeline.utils import log
 
+# ── Orchestration: Prefect (per tech-stack doc) with plain-Python fallback ─
+# The project tech stack prescribes Mage/Prefect/Airflow for the pipeline.
+# Prefect is used when installed (task-level retries, run tracking, UI);
+# without it the pipeline still runs as a plain script.
+try:
+    from prefect import flow, task
+    _PREFECT = True
+except ImportError:
+    _PREFECT = False
 
+    def task(*args, **kwargs):
+        def _wrap(fn):
+            return fn
+        if args and callable(args[0]):
+            return args[0]
+        return _wrap
+
+    flow = task
+
+
+@task(name="step1_load")
+def t1_load():
+    return step1_load.run()
+
+
+@task(name="step2_aggregate")
+def t2_aggregate(dfs):
+    return step2_aggregate.run(dfs)
+
+
+@task(name="step3_merge")
+def t3_merge(dfs, agg_dfs):
+    return step3_merge.run(dfs, agg_dfs)
+
+
+@task(name="step4_clean")
+def t4_clean(df):
+    return step4_clean.run(df)
+
+
+@task(name="step5_missing")
+def t5_missing(df):
+    return step5_missing.run(df)
+
+
+@task(name="step6_outliers")
+def t6_outliers(df):
+    return step6_outliers.run(df)
+
+
+@task(name="step7_engineer")
+def t7_engineer(df):
+    return step7_engineer.run(df)
+
+
+@task(name="step8_encode")
+def t8_encode(df):
+    return step8_encode.run(df)
+
+
+@task(name="step9_scale")
+def t9_scale(df):
+    return step9_scale.run(df)
+
+
+@task(name="step10_feature_selection")
+def t10_feature_selection():
+    return step10_feature_selection.run()
+
+
+@flow(name="kdd-phase1-preprocessing")
 def main() -> None:
     t0 = time.time()
     log("=" * 60)
-    log("KDD Phase 1 — Preprocessing pipeline starting")
+    log(f"KDD Phase 1 — Preprocessing pipeline starting "
+        f"(orchestrator: {'Prefect' if _PREFECT else 'plain Python'})")
     log("=" * 60)
 
-    dfs      = step1_load.run()
-    agg_dfs  = step2_aggregate.run(dfs)
-    merged   = step3_merge.run(dfs, agg_dfs)
-    cleaned  = step4_clean.run(merged)
-    imputed  = step5_missing.run(cleaned)
-    outlier_treated = step6_outliers.run(imputed)
-    engineered = step7_engineer.run(outlier_treated)
-    encoded    = step8_encode.run(engineered)
-    step9_scale.run(encoded)
-    step10_feature_selection.run()
+    dfs      = t1_load()
+    agg_dfs  = t2_aggregate(dfs)
+    merged   = t3_merge(dfs, agg_dfs)
+    cleaned  = t4_clean(merged)
+    imputed  = t5_missing(cleaned)
+    outlier_treated = t6_outliers(imputed)
+    engineered = t7_engineer(outlier_treated)
+    encoded    = t8_encode(engineered)
+    t9_scale(encoded)
+    t10_feature_selection()
 
     elapsed = time.time() - t0
     log("=" * 60)
     log(f"Pipeline complete in {elapsed:.1f}s")
     log("Output: datasets/final/features_clustering.csv")
-    log("        results/phase1_preprocessing/preprocessing_report.txt")
+    log("        results/phase1_preprocessing/preprocessing_report.md")
     log("=" * 60)
 
 

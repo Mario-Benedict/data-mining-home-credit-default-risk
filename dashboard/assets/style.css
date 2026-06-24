@@ -1,0 +1,145 @@
+/* ============================================================
+   Home Credit dashboard — clean white corporate theme.
+   White cards on a whisper-gray canvas, hairline borders,
+   one restrained steel-navy accent, generous whitespace,
+   no gradients, no shadows. A real business-intelligence look.
+   ============================================================ */
+
+:root {
+    --canvas:    #F7F8FA;   /* whisper-gray page */
+    --surface:   #FFFFFF;   /* cards, hero */
+    --surface-2: #F4F6F8;   /* table header / quiet tint */
+    --border:    #E6E8EC;   /* hairline */
+    --ink:       #1F2933;   /* dark slate text */
+    --ink-soft:  #6B7280;   /* secondary gray */
+    --accent:    #34506B;   /* restrained steel navy */
+}
+
+body {
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding: 0 0 48px 0;
+    background: var(--canvas);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Header: plain white, hairline underline, no banner colour */
+.hero {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 34px 48px 28px 48px;
+}
+.hero h1 {
+    margin: 0 0 9px 0;
+    font-size: 23px;
+    font-weight: 600;
+    letter-spacing: -0.2px;
+    color: var(--ink);
+}
+.hero-sub {
+    margin: 0;
+    max-width: 920px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--ink-soft);
+}
+
+/* KPI cards: white, thin top accent rule, no shadow */
+.kpi-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin: 24px 48px 22px 48px;
+}
+.kpi-card {
+    flex: 1;
+    min-width: 178px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+}
+.kpi-title { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.5px; }
+.kpi-value { font-size: 27px; font-weight: 650; color: var(--ink); margin: 5px 0 2px; }
+.kpi-sub   { font-size: 11.5px; color: var(--ink-soft); }
+
+/* Tabs: quiet text, active gets the accent underline */
+.tabs { margin: 0 48px; }
+.tabs .tab {
+    font-size: 13.5px !important;
+    font-weight: 500;
+    color: var(--ink-soft) !important;
+    border: none !important;
+    background: transparent !important;
+    padding: 13px 18px !important;
+}
+.tabs .tab--selected {
+    color: var(--accent) !important;
+    font-weight: 600;
+    border-bottom: 2px solid var(--accent) !important;
+}
+
+/* Content cards */
+.row {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin: 18px 48px;
+    align-items: flex-start;
+}
+.row > .card { flex: 1; min-width: 460px; margin: 0; }
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 18px 48px;
+}
+.card h3 { margin: 2px 0 8px 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+
+/* Insight callouts: plain white, thin left accent rule */
+.insight-row {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin: 22px 48px 0 48px;
+}
+.insight-box {
+    flex: 1;
+    min-width: 300px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 17px 20px;
+}
+.insight-title { font-weight: 600; font-size: 13.5px; margin-bottom: 7px; color: var(--ink); }
+.insight-body { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink-soft); }
+
+/* Captions under charts */
+.chart-caption {
+    font-size: 12px;
+    color: var(--ink-soft);
+    line-height: 1.55;
+    margin: 9px 2px 6px 2px;
+}
+
+/* Plain-language segment description */
+.segment-desc {
+    margin: 12px 2px 6px 2px;
+    padding: 13px 17px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ink);
+    max-width: 960px;
+}
+
+footer {
+    margin: 30px 48px 0 48px;
+    font-size: 11.5px;
+    color: var(--ink-soft);
+    line-height: 1.55;
+}
