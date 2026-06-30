@@ -55,6 +55,14 @@ Dokumen proyek mewajibkan seleksi fitur dengan korelasi DAN entropy. Keduanya ad
 
 ## Phase 2 — Clustering
 
+### Reduksi dimensi: dua ruang untuk dua tujuan (diperbaiki putaran ini)
+
+Keputusan reduksi dimensi sekarang dipisah sesuai cara kerja masing-masing algoritma, bukan satu ukuran untuk semua.
+
+K-Means dan hierarchical memakai **PCA dengan 9 komponen** (di bawah 10). Angka 9 bukan bulat sembarangan: pada scree plot, sumbangan tiap komponen menurun landai lalu jatuh lebih tajam dari PC9 (3,59%) ke PC10 (2,86%), jadi komponen ke-10 dan seterusnya menambah sangat sedikit. Sembilan komponen menjaga nyaris seluruh sinyal varians sambil memenuhi batas dimensi yang diminta dan tetap ringkas untuk jarak Euclidean.
+
+DBSCAN sekarang dijalankan di **embedding UMAP 2D**, bukan PCA. Alasannya prinsipiil: DBSCAN berbasis kepadatan, sedangkan PCA hanya menjaga varians linear dan cenderung memipihkan gumpalan padat, sehingga DBSCAN di ruang PCA dulu hanya melihat satu massa besar. UMAP memetakan struktur manifold non-linear sambil mempertahankan kepadatan lokal: gumpalan tetap rapat dan titik yang benar-benar terpencil terlihat sebagai noise. Jadi pembagian tugasnya jelas, PCA untuk yang berbasis varians (K-Means, hierarchical), UMAP untuk yang berbasis kepadatan (DBSCAN). Nilai `eps` tidak ditebak manual: dipilih otomatis dari titik belok kurva k-distance, heuristik baku DBSCAN (Ester dkk., 1996), persis trik elbow yang dipakai memilih K.
+
 ### Pemilihan K: logikanya benar
 
 Elbow dan silhouette dijalankan pada K = 2..10. Silhouette biasanya memuncak di K = 2, tetapi dua segmen terlalu kasar untuk keputusan bisnis. Elbow menunjuk K = 5, dan K = 5 adalah silhouette terbaik di antara K yang cukup granular (K ≥ 3). Reasoning ini benar: silhouette tertinggi absolut bukan satu-satunya kriteria; granularitas yang dapat ditafsirkan bisnis adalah pertimbangan sah dan dinyatakan eksplisit.
@@ -62,7 +70,7 @@ Elbow dan silhouette dijalankan pada K = 2..10. Silhouette biasanya memuncak di 
 ### Tiga algoritma, peran berbeda (benar)
 
 - **K-Means** pada seluruh data sebagai segmentasi utama.
-- **DBSCAN** sebagai detektor noise, bukan pembagi segmen. Logis: di data ini DBSCAN menghasilkan satu cluster raksasa plus pinggiran, jadi nilainya ada pada titik noise (yang default rate-nya tinggi), bukan pada pembagian.
+- **DBSCAN** (di ruang UMAP) sebagai detektor noise dan kantong kepadatan, bukan pembagi segmen utama. Di embedding UMAP, gumpalan padat terpisah lebih jelas, sehingga titik noise yang dihasilkan lebih bermakna sebagai kandidat outlier yang diteruskan ke Phase 4.
 - **Hierarchical** (BIRCH ke micro-centroid lalu Ward) sebagai validasi struktur. Memakai BIRCH karena hierarchical murni pada 356K baris butuh memori O(n²) yang mustahil. Reasoning komputasi ini benar dan didokumentasikan.
 
 ### Profiling: dinamai manusia, bukan template
@@ -95,9 +103,17 @@ Tiap aturan final mendapat empat bagian: apa isinya dalam bahasa sehari-hari, me
 
 IQR, Z-score, dan Isolation Forest dijalankan pada seluruh data, lalu dicocokkan dengan noise DBSCAN dari Phase 2. Reasoning penggabungan benar: makin banyak metode independen sepakat sebuah aplikasi menyimpang, makin tinggi keyakinan ia benar-benar anomali, bukan kebetulan satu metode. Kombinasi metode berbasis kepadatan (DBSCAN) dan berbasis pohon (Isolation Forest) saling memperkuat.
 
-### Tipologi: tiga jenis dengan tindak lanjut berbeda (benar)
+### Dua lapis klasifikasi: teori + aksi (diperkuat putaran ini)
 
-Anomali tidak diperlakukan sebagai satu keranjang "buang". Tipe A (kesalahan data, deviasi > 50x median) diperbaiki di ETL. Tipe B (langka tapi sah) dialihkan ke layanan prioritas. Tipe C (sinyal risiko, kombinasi finansial kontradiktif) masuk review manual. Logika ini cocok dengan tipologi outlier yang sudah disiapkan di Section 6 EDA, jadi Phase 4 mengeksekusi kerangka yang sudah ditetapkan, bukan mengarang baru.
+Tiap anomali kini diberi dua label yang saling melengkapi.
+
+Lapis pertama adalah kerangka teori klasik outlier (Chandola dkk., 2009), yang memang baku di literatur anomaly detection:
+
+- **Global (point)**: satu fitur ekstrem dibanding seluruh populasi. Karena fitur sudah terstandardisasi, |nilai| besar berarti jauh dari rata-rata global; inilah yang ditangkap IQR dan Z-score.
+- **Contextual**: nilainya wajar secara umum, tetapi menyimpang tajam dari pola segmennya sendiri. Pemakaian kartu tinggi normal bagi "CC Intensif" tapi janggal bagi "Minimal". Jenis ini paling layak diselidiki sebagai sinyal risiko karena menandai nasabah yang tidak berperilaku seperti kelompoknya.
+- **Collective**: bagian dari kantong kecil yang dipisahkan UMAP/DBSCAN dari massa utama; dipantau sebagai pola berulang, bukan kasus tunggal.
+
+Lapis kedua adalah tipe bisnis yang menentukan aksi: Tipe A (kesalahan data, deviasi > 50x median segmen) diperbaiki di ETL; Tipe B (langka tapi sah) dialihkan ke layanan prioritas; Tipe C (sinyal risiko, kombinasi finansial kontradiktif) masuk review manual. Kedua lapis ini cocok dengan tipologi outlier yang sudah disiapkan di Section 6 EDA, dan tiap kasus mendapat rekomendasi yang disesuaikan dengan domain segmennya (mis. anomali di segmen Bermasalah langsung dieskalasi, di CC Intensif diperiksa lonjakan utilisasinya).
 
 ### Validasi terhadap TARGET (benar dan kuat)
 

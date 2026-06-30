@@ -8,7 +8,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 DATA_DIR = os.path.join(BASE_DIR, "datasets")
 OUTPUT_DIR = os.path.join(BASE_DIR, "datasets", "final")
 
-# ── Input paths ────────────────────────────────────────────────────────────
+# Input paths
 PATHS = {
     "application_train":    os.path.join(DATA_DIR, "application_train.csv"),
     "application_test":     os.path.join(DATA_DIR, "application_test.csv"),
@@ -20,12 +20,12 @@ PATHS = {
     "credit_card_balance":  os.path.join(DATA_DIR, "credit_card_balance.csv"),
 }
 
-# ── Sentinel value (EDA Section 4, 6) ─────────────────────────────────────
+# Sentinel value (EDA Section 4, 6)
 # DAYS_EMPLOYED = 365243 encodes pensioners/unemployed; not a real duration.
 # Default rate of sentinel group (5.4%) differs from non-sentinel (8.7%).
 DAYS_EMPLOYED_SENTINEL = 365_243
 
-# ── Housing column triplication (EDA Section 7) ───────────────────────────
+# Housing column triplication (EDA Section 7)
 # AVG and MEDI variants are r > 0.99 correlated with MODE. Drop both.
 # Only the quantitative measurement bases are triplicated.
 BUILDING_BASES = [
@@ -38,11 +38,11 @@ COLS_DROP_AVG  = [f"{b}_AVG"  for b in BUILDING_BASES]
 COLS_DROP_MEDI = [f"{b}_MEDI" for b in BUILDING_BASES]
 BUILDING_MODE_COLS = [f"{b}_MODE" for b in BUILDING_BASES] + ["TOTALAREA_MODE"]
 
-# ── Redundant correlated features (EDA Section 7) ─────────────────────────
-# OBS_60 r=0.998 with OBS_30 → drop OBS_60.
-# FLAG_EMP_PHONE r=-1.0 with DAYS_EMPLOYED (after sentinel) → drop.
-# FLAG_MOBIL is near-constant (all 1s) → drop.
-# REGION_RATING_CLIENT r>0.85 with REGION_RATING_CLIENT_W_CITY → drop non-city variant.
+# Redundant correlated features (EDA Section 7)
+# OBS_60 r=0.998 with OBS_30 -> drop OBS_60.
+# FLAG_EMP_PHONE r=-1.0 with DAYS_EMPLOYED (after sentinel) -> drop.
+# FLAG_MOBIL is near-constant (all 1s) -> drop.
+# REGION_RATING_CLIENT r>0.85 with REGION_RATING_CLIENT_W_CITY -> drop non-city variant.
 COLS_DROP_REDUNDANT = [
     "OBS_60_CNT_SOCIAL_CIRCLE",
     "FLAG_EMP_PHONE",
@@ -50,7 +50,7 @@ COLS_DROP_REDUNDANT = [
     "REGION_RATING_CLIENT",
 ]
 
-# ── DAYS_* columns to convert to positive years (EDA Section 4, 7) ────────
+# DAYS_* columns to convert to positive years (EDA Section 4, 7)
 # All stored as negative integers (days before application date).
 DAYS_COLS = [
     "DAYS_BIRTH",
@@ -60,13 +60,13 @@ DAYS_COLS = [
     "DAYS_LAST_PHONE_CHANGE",
 ]
 
-# ── Rare income types to group (EDA Section 5) ────────────────────────────
+# Rare income types to group (EDA Section 5)
 # Total n=55 across 4 categories; too sparse for stable cluster membership.
 RARE_INCOME_TYPES = ["Unemployed", "Student", "Businessman", "Maternity leave"]
 RARE_INCOME_LABEL = "Other_Rare"
 
-# ── ORGANIZATION_TYPE macro-sector mapping (EDA Section 5) ───────────────
-# 58 granular categories → 12 meaningful sectors.
+# ORGANIZATION_TYPE macro-sector mapping (EDA Section 5)
+# 58 granular categories -> 12 meaningful sectors.
 ORG_TYPE_MAP = {
     "Business Entity Type 1": "Private_Business",
     "Business Entity Type 2": "Private_Business",
@@ -132,36 +132,36 @@ ORG_TYPE_MAP = {
     "Other":                  "Other",
 }
 
-# ── Outlier / winsorize / cap config (EDA Section 6) ─────────────────────
+# Outlier / winsorize / cap config (EDA Section 6)
 # AMT_INCOME_TOTAL: p99 = 472,500; max = 117,000,000 (247x median).
 # Cap first, then log-transform.
 WINSORIZE_CONFIG = {
-    "AMT_INCOME_TOTAL": 0.99,     # cap at p99
-    "AMT_REQ_CREDIT_BUREAU_QRT": 0.99,  # max=261, p99≈5
+    "AMT_INCOME_TOTAL": 0.99,    # cap at p99
+    "AMT_REQ_CREDIT_BUREAU_QRT": 0.99, # max=261, p99~5
     "AMT_REQ_CREDIT_BUREAU_MON": 0.99,
     "AMT_REQ_CREDIT_BUREAU_YEAR": 0.99,
 }
 CAP_CONFIG = {
-    "CNT_CHILDREN":    10,   # max=19 is biologically implausible; cap at defensible limit
+    "CNT_CHILDREN":    10,  # max=19 is biologically implausible; cap at defensible limit
     "CNT_FAM_MEMBERS": 15,
 }
 
-# ── Log-transform columns (EDA Section 4) ─────────────────────────────────
+# Log-transform columns (EDA Section 4)
 # Applied after winsorizing. All are right-skewed financial amounts.
 LOG_TRANSFORM_COLS = [
     "AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY", "AMT_GOODS_PRICE",
 ]
 
-# ── Missing value imputation strategy (EDA Section 3) ────────────────────
+# Missing value imputation strategy (EDA Section 3)
 # Each decision is grounded in domain reasoning from EDA.
 
 # Median imputation: numeric fields with MCAR / moderate missingness.
 MEDIAN_IMPUTE_COLS = [
-    "EXT_SOURCE_2",         # 0.21% missing; safe to median-impute
-    "EXT_SOURCE_3",         # 19.83% missing; median impute after flag created
-    "AMT_ANNUITY",          # 0.0% missing in train, small gap in test
-    "AMT_GOODS_PRICE",      # 0.09% missing
-    "CNT_FAM_MEMBERS",      # < 1% missing
+    "EXT_SOURCE_2",        # 0.21% missing; safe to median-impute
+    "EXT_SOURCE_3",        # 19.83% missing; median impute after flag created
+    "AMT_ANNUITY",         # 0.0% missing in train, small gap in test
+    "AMT_GOODS_PRICE",     # 0.09% missing
+    "CNT_FAM_MEMBERS",     # < 1% missing
     "DAYS_LAST_PHONE_CHANGE",
     "AMT_REQ_CREDIT_BUREAU_HOUR",
     "AMT_REQ_CREDIT_BUREAU_DAY",
@@ -185,7 +185,7 @@ MODE_IMPUTE_COLS = ["NAME_TYPE_SUITE"]
 # EXT_SOURCE_1: 56.4% missing. Impute with median AFTER creating FLAG_EXT_SOURCE_1_MISSING.
 # OCCUPATION_TYPE: 31.4% missing. Imputed with mode per income type group in step5.
 
-# Categorical fields with structural absence → fill with explicit label.
+# Categorical fields with structural absence -> fill with explicit label.
 CATEGORICAL_FILL_UNKNOWN = [
     "FONDKAPREMONT_MODE",
     "HOUSETYPE_MODE",
@@ -193,97 +193,97 @@ CATEGORICAL_FILL_UNKNOWN = [
     "EMERGENCYSTATE_MODE",
 ]
 
-# ── Phase 2 clustering feature set ────────────────────────────────────────
+# Phase 2 clustering feature set
 # Every entry is traceable to EDA Section 10 Justification Table.
 # Sections referenced: §4 (DAYS encoding), §5 (rare cats), §6 (outliers),
 # §10 (justification table), §11-12 (EXT_SOURCE independence + age link),
 # §13 (bureau absence), §14 (DEF_30 sub-population), §15 (installment DPD).
 CLUSTERING_FEATURES = [
-    # ── Financial capacity (EDA §6, §10: log transform + winsorise justified) ─
-    "AMT_INCOME_TOTAL",           # log-transformed; winsorised at p99
-    "AMT_CREDIT",                 # log-transformed; skewness 1.2–1.6
-    "AMT_ANNUITY",                # log-transformed
-    "CREDIT_TO_INCOME",           # leverage ratio (derived from EDA-justified cols)
-    "ANNUITY_TO_INCOME",          # debt-service burden ratio
-    "CREDIT_TERM_MONTHS",         # implied loan duration (AMT_CREDIT / AMT_ANNUITY)
+    # Financial capacity (EDA §6, §10: log transform + winsorise justified)
+    "AMT_INCOME_TOTAL",          # log-transformed; winsorised at p99
+    "AMT_CREDIT",                # log-transformed; skewness 1.2-1.6
+    "AMT_ANNUITY",               # log-transformed
+    "CREDIT_TO_INCOME",          # leverage ratio (derived from EDA-justified cols)
+    "ANNUITY_TO_INCOME",         # debt-service burden ratio
+    "CREDIT_TERM_MONTHS",        # implied loan duration (AMT_CREDIT / AMT_ANNUITY)
 
-    # ── Demographics (EDA §4, §10: DAYS_BIRTH → positive years; sentinel flag) ─
-    "YEARS_BIRTH",                # abs(DAYS_BIRTH)/365.25 — negative encoding fixed
-    "YEARS_EMPLOYED",             # abs(DAYS_EMPLOYED)/365.25; 0 for sentinel rows
-    "FLAG_SENTINEL_EMPLOYED",     # EDA §10: 18% pensioners/unemployed; 5.4% vs 8.7% default
-    "CNT_CHILDREN",               # capped at 10 (EDA §10: implausible values)
-    "CODE_GENDER",                # binary F=1 M=0; XNA (4 rows) → NaN (EDA §10)
-    "NAME_CONTRACT_TYPE",         # binary Cash=1 Revolving=0
+    # Demographics (EDA §4, §10: DAYS_BIRTH -> positive years; sentinel flag)
+    "YEARS_BIRTH",               # abs(DAYS_BIRTH)/365.25 - negative encoding fixed
+    "YEARS_EMPLOYED",            # abs(DAYS_EMPLOYED)/365.25; 0 for sentinel rows
+    "FLAG_SENTINEL_EMPLOYED",    # EDA §10: 18% pensioners/unemployed; 5.4% vs 8.7% default
+    "CNT_CHILDREN",              # capped at 10 (EDA §10: implausible values)
+    "CODE_GENDER",               # binary F=1 M=0; XNA (4 rows) -> NaN (EDA §10)
+    "NAME_CONTRACT_TYPE",        # binary Cash=1 Revolving=0
     "REGION_RATING_CLIENT_W_CITY",# retained from correlated pair (EDA §10: drop non-city)
-    "OWN_CAR_AGE",                # 0 for no-car applicants (structural imputation)
-    "FLAG_NO_CAR",                # EDA §10: missingness = no car; binary indicator
-    "FLAG_NO_HOUSING_DATA",       # EDA §10: 47–70% housing cols absent → single indicator
+    "OWN_CAR_AGE",               # 0 for no-car applicants (structural imputation)
+    "FLAG_NO_CAR",               # EDA §10: missingness = no car; binary indicator
+    "FLAG_NO_HOUSING_DATA",      # EDA §10: 47-70% housing cols absent -> single indicator
 
-    # ── External credit scores (EDA §11-12: strongest predictors; all independent) ─
-    "EXT_SOURCE_1",               # strongest default predictor; 56.4% missing → median
-    "EXT_SOURCE_2",               # r < 0.22 with EXT_SOURCE_1 — independent signal
-    "EXT_SOURCE_3",               # r < 0.22 with EXT_SOURCE_1 — independent signal
-    "FLAG_EXT_SOURCE_1_MISSING",  # EDA §10: thin credit file indicator
+    # External credit scores (EDA §11-12: strongest predictors; all independent)
+    "EXT_SOURCE_1",              # strongest default predictor; 56.4% missing -> median
+    "EXT_SOURCE_2",              # r < 0.22 with EXT_SOURCE_1 - independent signal
+    "EXT_SOURCE_3",              # r < 0.22 with EXT_SOURCE_1 - independent signal
+    "FLAG_EXT_SOURCE_1_MISSING", # EDA §10: thin credit file indicator
 
-    # ── Credit enquiry frequency ───────────────────────────────────────────
+    # Credit enquiry frequency
     "AMT_REQ_CREDIT_BUREAU_YEAR", # winsorised at p99 (EDA §10)
 
-    # ── Bureau history (EDA §13: absence = thin file; §15: DPD signal) ────
-    "FLAG_NO_BUREAU",             # 1,700 applicants with no bureau records
-    "BUREAU_COUNT",               # credit history depth
-    "BUREAU_ACTIVE_RATIO",        # current leverage level
+    # Bureau history (EDA §13: absence = thin file; §15: DPD signal)
+    "FLAG_NO_BUREAU",            # 1,700 applicants with no bureau records
+    "BUREAU_COUNT",              # credit history depth
+    "BUREAU_ACTIVE_RATIO",       # current leverage level
     "BUREAU_DEBT_TO_CREDIT_RATIO",# external debt burden
-    "BUREAU_DAYS_CREDIT_MEAN",    # average age of credit lines
-    "BUREAU_BB_DPD_RATIO_MEAN",   # share of months with any DPD
-    "BUREAU_BB_SEVERE_DPD_MEAN",  # share of months with 90+ DPD
+    "BUREAU_DAYS_CREDIT_MEAN",   # average age of credit lines
+    "BUREAU_BB_DPD_RATIO_MEAN",  # share of months with any DPD
+    "BUREAU_BB_SEVERE_DPD_MEAN", # share of months with 90+ DPD
 
-    # ── Previous applications (behavioural depth signal) ───────────────────
-    "PREV_COUNT",                 # breadth of prior Home Credit engagement
-    "PREV_APPROVAL_RATE",         # historical approval signal
-    "PREV_REFUSED_COUNT",         # refusal history — risk signal
+    # Previous applications (behavioural depth signal)
+    "PREV_COUNT",                # breadth of prior Home Credit engagement
+    "PREV_APPROVAL_RATE",        # historical approval signal
+    "PREV_REFUSED_COUNT",        # refusal history - risk signal
 
-    # ── Installment repayment (EDA §15: 8.4% late; "mean DPD, max DPD, ─────
-    #    pct late, pct severely late >30d" prescribed in justification table)
+    # Installment repayment (EDA §15: 8.4% late; "mean DPD, max DPD,
+    #   pct late, pct severely late >30d" prescribed in justification table)
     "INST_DPD_MEAN",
     "INST_DPD_MAX",
     "INST_LATE_RATIO",
-    "INST_SEVERE_LATE_RATIO",     # >30d DPD
-    "INST_PAYMENT_RATIO_MEAN",    # mean(paid/owed) — underpayment signal
+    "INST_SEVERE_LATE_RATIO",    # >30d DPD
+    "INST_PAYMENT_RATIO_MEAN",   # mean(paid/owed) - underpayment signal
 
-    # ── POS / Cash loans ───────────────────────────────────────────────────
+    # POS / Cash loans
     "POS_SK_DPD_MEAN",
     "POS_MONTHS_COUNT",
 
-    # ── Credit card (EDA §10: "mean and max utilization; months of history") ─
+    # Credit card (EDA §10: "mean and max utilization; months of history")
     "CC_UTILIZATION_MEAN",
     "CC_UTILIZATION_MAX",
     "CC_SK_DPD_MEAN",
     "CC_AMT_BALANCE_MEAN",
     "CC_MONTHS_COUNT",
 
-    # ── Categorical, encoded for distance-based clustering (no OHE) ─────────
-    "NAME_EDUCATION_TYPE",         # ordinal 0–4 (education ladder); SES proxy
-    "NAME_INCOME_TYPE_FREQ",       # frequency-encoded income source (mainstream↔niche)
-    "ORGANIZATION_TYPE_FREQ",      # frequency-encoded employer sector
+    # Categorical, encoded for distance-based clustering (no OHE)
+    "NAME_EDUCATION_TYPE",        # ordinal 0-4 (education ladder); SES proxy
+    "NAME_INCOME_TYPE_FREQ",      # frequency-encoded income source (mainstream to niche)
+    "ORGANIZATION_TYPE_FREQ",     # frequency-encoded employer sector
 ]
 
-# ── Categorical encoding for DISTANCE-BASED clustering ────────────────────
+# Categorical encoding for DISTANCE-BASED clustering
 # Why not one-hot encoding (OHE)?
-#   K-Means works on Euclidean distance. OHE turns one nominal column into N
-#   binary columns, which (a) inflates dimensionality with sparse axes, and
-#   (b) forces every pair of categories to sit at the SAME distance √2 apart,
-#   even when some categories are far more alike than others. For a 12-sector
-#   ORGANIZATION_TYPE that means ~11 extra axes that collectively outweigh a
-#   single standardized continuous feature. An earlier run also produced a
-#   perfectly collinear trio (FLAG_SENTINEL_EMPLOYED ≡ ORGANIZATION_TYPE_Unknown
-#   ≡ NAME_INCOME_TYPE_Pensioner, r ≈ 1.0) — a direct symptom of OHE on a
-#   nominal whose "missing" category coincides with another flag.
+#  K-Means works on Euclidean distance. OHE turns one nominal column into N
+#  binary columns, which (a) inflates dimensionality with sparse axes, and
+#  (b) forces every pair of categories to sit at the SAME distance √2 apart,
+#  even when some categories are far more alike than others. For a 12-sector
+#  ORGANIZATION_TYPE that means ~11 extra axes that collectively outweigh a
+#  single standardized continuous feature. An earlier run also produced a
+#  perfectly collinear trio (FLAG_SENTINEL_EMPLOYED == ORGANIZATION_TYPE_Unknown
+#  == NAME_INCOME_TYPE_Pensioner, r ~ 1.0) - a direct symptom of OHE on a
+#  nominal whose "missing" category coincides with another flag.
 #
 # Encoding chosen per variable, matched to what the variable actually is:
 
-# 1) ORDINAL — NAME_EDUCATION_TYPE has a real ladder (junior school → degree).
-#    A single ordered integer preserves "Higher education is closer to
-#    Incomplete higher than to Lower secondary", which OHE destroys.
+# 1) ORDINAL - NAME_EDUCATION_TYPE has a real ladder (junior school -> degree).
+#   A single ordered integer preserves "Higher education is closer to
+#   Incomplete higher than to Lower secondary", which OHE destroys.
 EDUCATION_ORDINAL = {
     "Lower secondary":                0,
     "Secondary / secondary special":  1,
@@ -295,14 +295,14 @@ EDUCATION_ORDINAL = {
 EDUCATION_DEFAULT_LEVEL = 1
 ORDINAL_ENCODE_COLS = {"NAME_EDUCATION_TYPE": EDUCATION_ORDINAL}
 
-# 2) FREQUENCY — NAME_INCOME_TYPE and ORGANIZATION_TYPE are nominal with no
-#    natural order. Frequency encoding maps each category to how common it is
-#    in the population, collapsing the whole variable into ONE continuous
-#    "mainstream ↔ niche" axis. It keeps the signal that matters for
-#    segmentation (typical vs unusual employment/income source) without the
-#    dimensionality blow-up. Computed on the full train+test pool (unsupervised,
-#    no leakage). Pensioners remain separately identified by
-#    FLAG_SENTINEL_EMPLOYED, so the residual overlap is small, not r≈1.0.
+# 2) FREQUENCY - NAME_INCOME_TYPE and ORGANIZATION_TYPE are nominal with no
+#   natural order. Frequency encoding maps each category to how common it is
+#   in the population, collapsing the whole variable into ONE continuous
+#   "mainstream  to  niche" axis. It keeps the signal that matters for
+#   segmentation (typical vs unusual employment/income source) without the
+#   dimensionality blow-up. Computed on the full train+test pool (unsupervised,
+#   no leakage). Pensioners remain separately identified by
+#   FLAG_SENTINEL_EMPLOYED, so the residual overlap is small, not r~1.0.
 FREQUENCY_ENCODE_COLS = {
     "NAME_INCOME_TYPE":  "NAME_INCOME_TYPE_FREQ",
     "ORGANIZATION_TYPE": "ORGANIZATION_TYPE_FREQ",

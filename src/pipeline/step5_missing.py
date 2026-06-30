@@ -1,23 +1,23 @@
 """
-Step 5 — Missing value indicators and imputation.
+Step 5 - Missing value indicators and imputation.
 
 Indicators are created FIRST so the imputed value does not destroy the signal
 that a value was originally absent.
 
 Strategy by column (EDA Section 3):
-  FLAG_NO_CAR              → OWN_CAR_AGE missing = applicant has no car
-  FLAG_NO_HOUSING_DATA     → all BUILDING_MODE_COLS missing = non-apartment housing
-  FLAG_EXT_SOURCE_1_MISSING → EXT_SOURCE_1 56.4% missing = thin credit file
-  FLAG_SENTINEL_EMPLOYED   → already created in step4
+  FLAG_NO_CAR              -> OWN_CAR_AGE missing = applicant has no car
+  FLAG_NO_HOUSING_DATA     -> all BUILDING_MODE_COLS missing = non-apartment housing
+  FLAG_EXT_SOURCE_1_MISSING -> EXT_SOURCE_1 56.4% missing = thin credit file
+  FLAG_SENTINEL_EMPLOYED   -> already created in step4
 
 Imputation:
-  Zero   : OWN_CAR_AGE, BUILDING_MODE_COLS (structural absence ≡ zero)
+  Zero   : OWN_CAR_AGE, BUILDING_MODE_COLS (structural absence == zero)
   Median : numeric columns with MCAR/random missingness
   Mode   : NAME_TYPE_SUITE (categorical)
   "Unknown" fill : FONDKAPREMONT_MODE, HOUSETYPE_MODE, WALLSMATERIAL_MODE, EMERGENCYSTATE_MODE
   OCCUPATION_TYPE : mode within NAME_INCOME_TYPE group (group-mode imputation)
   EXT_SOURCE_1 : global median (after flag created)
-  Aggregated table NaNs : applicants with no records → 0 (absence = no activity)
+  Aggregated table NaNs : applicants with no records -> 0 (absence = no activity)
 """
 import numpy as np
 import pandas as pd
@@ -31,7 +31,7 @@ from .config import (
 from .utils import log, log_missing, log_shape
 
 # Columns introduced by the five aggregated tables (step2).
-# Absent rows = applicant had no records in that table → fill with 0.
+# Absent rows = applicant had no records in that table -> fill with 0.
 AGG_TABLE_COLS_PREFIX = [
     "BUREAU_", "BB_", "PREV_", "POS_", "INST_", "CC_",
 ]
@@ -42,12 +42,12 @@ def _is_agg_col(col: str) -> bool:
 
 
 def run(df: pd.DataFrame) -> pd.DataFrame:
-    log("Step 5 — Missing value handling ...")
+    log("Step 5 - Missing value handling ...")
     df = df.copy()
 
     log_missing(df, "before imputation")
 
-    # ── Missingness indicators ─────────────────────────────────────────────
+    # Missingness indicators
     df["FLAG_NO_CAR"] = df["OWN_CAR_AGE"].isna().astype(np.int8)
 
     housing_missing = df[BUILDING_MODE_COLS].isna().all(axis=1)
@@ -58,7 +58,7 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
         df["FLAG_EXT_SOURCE_1_MISSING"] = df["EXT_SOURCE_1"].isna().astype(np.int8)
         log(f"  FLAG_EXT_SOURCE_1_MISSING=1: {df['FLAG_EXT_SOURCE_1_MISSING'].sum():,}")
 
-    # ── Zero imputation ────────────────────────────────────────────────────
+    # Zero imputation
     for col in ZERO_IMPUTE_COLS:
         if col in df.columns:
             n = df[col].isna().sum()
@@ -66,30 +66,30 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
             if n:
                 log(f"  Zero-imputed {col}: {n:,} NaNs")
 
-    # ── Median imputation ──────────────────────────────────────────────────
+    # Median imputation
     for col in MEDIAN_IMPUTE_COLS + (["EXT_SOURCE_1"] if "EXT_SOURCE_1" in df.columns else []):
         if col in df.columns and df[col].isna().any():
             med = df[col].median()
             n = df[col].isna().sum()
             df[col] = df[col].fillna(med)
-            log(f"  Median-imputed {col}: {n:,} NaNs → {med:.4f}")
+            log(f"  Median-imputed {col}: {n:,} NaNs -> {med:.4f}")
 
-    # ── Mode imputation ────────────────────────────────────────────────────
+    # Mode imputation
     for col in MODE_IMPUTE_COLS:
         if col in df.columns and df[col].isna().any():
             mode_val = df[col].mode(dropna=True).iloc[0]
             n = df[col].isna().sum()
             df[col] = df[col].fillna(mode_val)
-            log(f"  Mode-imputed {col}: {n:,} NaNs → '{mode_val}'")
+            log(f"  Mode-imputed {col}: {n:,} NaNs -> '{mode_val}'")
 
-    # ── Categorical "Unknown" fill ─────────────────────────────────────────
+    # Categorical "Unknown" fill
     for col in CATEGORICAL_FILL_UNKNOWN:
         if col in df.columns and df[col].isna().any():
             n = df[col].isna().sum()
             df[col] = df[col].fillna("Unknown")
             log(f"  Unknown-filled {col}: {n:,} NaNs")
 
-    # ── OCCUPATION_TYPE: group-mode imputation ─────────────────────────────
+    # OCCUPATION_TYPE: group-mode imputation
     if "OCCUPATION_TYPE" in df.columns and df["OCCUPATION_TYPE"].isna().any():
         occ_mode = (
             df.dropna(subset=["OCCUPATION_TYPE"])
@@ -103,11 +103,11 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
         df["OCCUPATION_TYPE"] = df["OCCUPATION_TYPE"].fillna(remaining_mode)
         log(f"  OCCUPATION_TYPE group-mode imputed: {mask.sum():,} NaNs")
 
-    # ── Aggregated table NaNs → 0 ─────────────────────────────────────────
+    # Aggregated table NaNs -> 0
     agg_cols = [c for c in df.columns if _is_agg_col(c)]
     agg_null_before = df[agg_cols].isna().sum().sum()
     df[agg_cols] = df[agg_cols].fillna(0)
-    log(f"  Agg-table NaNs → 0: {agg_null_before:,} cells")
+    log(f"  Agg-table NaNs -> 0: {agg_null_before:,} cells")
 
     log_missing(df, "after imputation")
     log_shape("step5_out", df)

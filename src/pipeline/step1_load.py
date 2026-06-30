@@ -1,5 +1,5 @@
 """
-Step 1 — Load all CSV files.
+Step 1 - Load all CSV files.
 
 Validates that each file exists and prints shapes for audit.
 No transformation is applied here.

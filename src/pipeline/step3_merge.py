@@ -1,5 +1,5 @@
 """
-Step 3 — Combine application tables and join all aggregated features.
+Step 3 - Combine application tables and join all aggregated features.
 
 Design decisions:
   - train + test are stacked after dropping TARGET (unsupervised pipeline).
@@ -13,7 +13,7 @@ from .utils import log, log_shape
 
 
 def run(dfs: dict, agg_dfs: dict) -> pd.DataFrame:
-    log("Step 3 — Merging application tables ...")
+    log("Step 3 - Merging application tables ...")
 
     train = dfs["application_train"].copy()
     test  = dfs["application_test"].copy()
@@ -30,10 +30,10 @@ def run(dfs: dict, agg_dfs: dict) -> pd.DataFrame:
 
     for key, df in [
         ("bureau_agg", agg_dfs["bureau_agg"]),
-        ("prev_agg",   agg_dfs["prev_agg"]),
-        ("pos_agg",    agg_dfs["pos_agg"]),
-        ("inst_agg",   agg_dfs["inst_agg"]),
-        ("cc_agg",     agg_dfs["cc_agg"]),
+        ("prev_agg",  agg_dfs["prev_agg"]),
+        ("pos_agg",   agg_dfs["pos_agg"]),
+        ("inst_agg",  agg_dfs["inst_agg"]),
+        ("cc_agg",    agg_dfs["cc_agg"]),
     ]:
         app = app.merge(df, on="SK_ID_CURR", how="left")
         log(f"  Joined {key}: {app.shape[1]} cols after merge")

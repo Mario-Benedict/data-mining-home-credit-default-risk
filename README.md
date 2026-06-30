@@ -82,11 +82,11 @@ Phase 3 dan 4 punya pengaman: bila cluster_labels.csv tidak sejalan dengan featu
 
 Phase 1 mengubah 7 CSV mentah menjadi 356.255 baris dengan 65 fitur numerik terstandardisasi tanpa NaN, plus kolom SK_ID_CURR sebagai identitas. Seleksi fitur memakai dua ukuran sesuai rubrik: korelasi Pearson (trio fitur dengan r mendekati 1,0 dibuang; tersisa 2 pasangan yang terdokumentasi) dan mutual information berbasis entropy terhadap TARGET.
 
-Phase 2 menemukan 5 segmen lewat K-Means (K=5, dipilih berdasarkan elbow dan silhouette), divalidasi hierarchical clustering (BIRCH lalu Ward, dendrogram 3 linkage), dengan DBSCAN sebagai detektor noise (739 titik dari sample 50 ribu). Segmen: Minimal 35,6%, Ambisius 35,0%, Veteran 13,1%, Bermasalah 1,0%, CC Intensif 15,2%. Pemetaan nomor cluster ke nama tersimpan di cluster_names.csv karena penomoran bisa berubah antar run.
+Phase 2 menemukan 5 segmen lewat K-Means (K=5, dipilih berdasarkan elbow dan silhouette), divalidasi hierarchical clustering (BIRCH lalu Ward, dendrogram 3 linkage). Reduksi dimensi dipisah sesuai algoritma: K-Means dan hierarchical memakai PCA 9 komponen (di bawah 10, dipilih dari titik belok scree), sedangkan DBSCAN dijalankan di embedding UMAP 2D karena ia berbasis kepadatan, dengan eps otomatis dari knee k-distance. Pemetaan nomor cluster ke nama tersimpan di cluster_names.csv karena penomoran bisa berubah antar run.
 
 Phase 3 menjalankan Apriori, FP-Growth, dan ECLAT pada seluruh 356.255 transaksi. Ketiganya menemukan 1.204 rules yang persis sama, ditambah 1.236 rules per segmen. Lima belas rule final dipilih (tiga per segmen, saringan redundansi Jaccard), lift 1,84 sampai 4,59, masing-masing dengan interpretasi empat bagian.
 
-Phase 4 mengevaluasi seluruh aplikasi dengan IQR, Z-score, dan Isolation Forest, lalu mencocokkannya dengan noise DBSCAN dari Phase 2. Hasilnya 10.911 anomali high-confidence yang semuanya diinvestigasi dengan ID pemohon nyata, terbagi tiga tipe: kesalahan data 6.084, langka tapi sah 4.617, sinyal risiko 210. Uji silang terhadap TARGET (yang tidak pernah dipakai saat mining) menunjukkan default naik bertingkat dari 7,25% di kelompok normal sampai 11,17% di anomali kuat, dan 13,47% untuk tipe sinyal risiko.
+Phase 4 mengevaluasi seluruh aplikasi dengan IQR, Z-score, dan Isolation Forest, lalu mencocokkannya dengan noise DBSCAN (ruang UMAP) dari Phase 2. Hasilnya 5.359 anomali high-confidence, semuanya diinvestigasi dengan ID pemohon nyata. Tiap kasus diberi dua label: jenis teori (global 3.766, kontekstual 1.493, kolektif 100) dan tipe bisnis (kesalahan data 3.215, langka tapi sah 2.005, sinyal risiko 139), plus rekomendasi sesuai segmennya. Uji silang terhadap TARGET (yang tidak pernah dipakai saat mining) menunjukkan default naik bertingkat dari 6,88% di kelompok normal sampai 12,92% di anomali kuat.
 
 Phase 5 berupa dashboard Plotly Dash untuk presentasi ke klien bisnis dan tiga laporan markdown di folder reports. Dashboard membaca semua angka dari folder results, jadi run ulang otomatis menyinkronkan tampilannya.
 
@@ -97,7 +97,7 @@ Phase 5 berupa dashboard Plotly Dash untuk presentasi ke klien bisnis dan tiga l
 | 1 | Cleaning, transformasi, seleksi fitur korelasi + entropy, pipeline | Pipeline Prefect 10 step; mutual_info_classif; audit korelasi |
 | 2 | K-Means + DBSCAN + Hierarchical, Elbow + Silhouette, profiling | Semua, plus dendrogram 3 linkage dan artefak pemetaan nama |
 | 3 | Diskretisasi, Apriori, support/confidence/lift, 10+ rules, interpretasi | 15 rules, 3 algoritma saling mengkonfirmasi, interpretasi spesifik |
-| 4 | IQR + Z-score + Isolation Forest, cross-ref Phase 2, tipologi | Semua pada full data, investigasi per kasus dengan ID nyata |
+| 4 | IQR + Z-score + Isolation Forest, cross-ref Phase 2, tipologi | Semua pada full data; kerangka global/contextual/collective + tipe bisnis A/B/C; investigasi per kasus dengan ID nyata & rekomendasi per segmen |
 | 5 | Dashboard, knowledge report, presentasi | Plotly Dash + 3 laporan manual |
 
 ## Catatan teknis

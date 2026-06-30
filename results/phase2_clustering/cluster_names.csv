@@ -1,6 +1,6 @@
 cluster_id,nama,slug,profil_risiko,n_applicants
-0,Peminjam Bermasalah,bermasalah,SANGAT TINGGI,3582
-1,Peminjam Ambisius,ambisius,SEDANG,125071
-2,Veteran Aktif,veteran,SEDANG-TINGGI,46905
-3,Pengguna CC Intensif,cc_intensif,SEDANG-TINGGI,54215
-4,Peminjam Minimal,minimal,RENDAH-SEDANG,126482
+0,Minimal Borrower,minimal,Low-medium,126140
+1,Active Veteran,veteran,Medium-high,47163
+2,Ambitious Borrower,ambisius,Medium,124939
+3,Intensive Card User,cc_intensif,Medium-high,54238
+4,Troubled Borrower,bermasalah,Very high,3775

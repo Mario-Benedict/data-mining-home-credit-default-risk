@@ -1,5 +1,5 @@
 """
-Step 7 — Feature engineering, log transforms, and column pruning.
+Step 7 - Feature engineering, log transforms, and column pruning.
 
 Derived features (EDA Section 7, 10):
   AGE_YEARS            = |DAYS_BIRTH| / 365
@@ -41,21 +41,21 @@ _DAYS_BUREAU_COLS = [
 
 
 def run(df: pd.DataFrame) -> pd.DataFrame:
-    log("Step 7 — Feature engineering ...")
+    log("Step 7 - Feature engineering ...")
     df = df.copy()
 
-    # ── DAYS_* → positive years ────────────────────────────────────────────
+    # DAYS_* -> positive years
     for col in DAYS_COLS:
         if col not in df.columns:
             continue
         year_col = col.replace("DAYS_", "YEARS_")
         df[year_col] = np.abs(df[col]) / 365.0
-        log(f"  {col} → {year_col}")
+        log(f"  {col} -> {year_col}")
 
-    # DAYS_EMPLOYED was NaN for sentinel rows after step4 — preserve NaN
+    # DAYS_EMPLOYED was NaN for sentinel rows after step4 - preserve NaN
     # The YEARS_EMPLOYED column will also be NaN for those rows (correct).
 
-    # ── Derived ratio features ─────────────────────────────────────────────
+    # Derived ratio features
     # Use post-winsorize AMT_INCOME_TOTAL (log not yet applied)
     df["CREDIT_TO_INCOME"] = df["AMT_CREDIT"] / df["AMT_INCOME_TOTAL"].replace(0, np.nan)
     df["ANNUITY_TO_INCOME"] = df["AMT_ANNUITY"] / df["AMT_INCOME_TOTAL"].replace(0, np.nan)
@@ -63,13 +63,13 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
     df["GOODS_TO_CREDIT"] = df["AMT_GOODS_PRICE"] / df["AMT_CREDIT"].replace(0, np.nan)
     log("  Derived: CREDIT_TO_INCOME, ANNUITY_TO_INCOME, CREDIT_TERM_MONTHS, GOODS_TO_CREDIT")
 
-    # ── Log transforms ─────────────────────────────────────────────────────
+    # Log transforms
     for col in LOG_TRANSFORM_COLS:
         if col in df.columns:
             df[col] = np.log1p(df[col].clip(lower=0))
             log(f"  log1p({col})")
 
-    # ── Drop redundant / near-constant / collinear columns ────────────────
+    # Drop redundant / near-constant / collinear columns
     drop_cols = (
         COLS_DROP_AVG
         + COLS_DROP_MEDI
