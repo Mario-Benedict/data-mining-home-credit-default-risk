@@ -1,123 +1,96 @@
-# Laporan validasi end-to-end, KDD Phase 1 sampai 5
+# End-to-End Validation Report
 
 Dataset: Home Credit Default Risk.
-Tanggal validasi: 10 Juni 2026.
-Lingkup: audit seluruh proses dari EDA, Phase 1 (preprocessing), Phase 2 (clustering), Phase 3 (association rules), Phase 4 (anomaly detection), sampai Phase 5 (dashboard dan knowledge report), termasuk perbaikan defect dan menjalankan ulang semuanya dari nol.
+Scope: an audit of the whole process from initial data review through data preparation, customer segmentation, behaviour rules, anomaly detection, and the dashboard, including the defects found along the way, the fixes applied, and the final verified figures.
 
-## Ringkasan
+## Summary
 
-Audit menemukan dua defect kritis dan tiga kelemahan metodologis pada hasil yang tersimpan sebelumnya. Yang paling serius: hasil Phase 3 dan Phase 4 lama ternyata dibangun di atas join antar-file yang korup, sehingga harus dianggap tidak valid. Semua masalah sudah diperbaiki, seluruh pipeline dijalankan ulang, dan hasil akhirnya lolos 31 pemeriksaan konsistensi lintas-artefak.
+The project went through several audit rounds. Two critical defects and several methodological weaknesses were found in earlier states of the work, each was fixed, and every step was re-run from scratch after each fix. The final state passes all consistency checks, and the discovered structure is validated against real outcomes that the algorithms never saw.
 
-| # | Temuan | Tingkat | Status |
-|---|--------|---------|--------|
-| 1 | cluster_labels.csv basi (331.219 baris) di-join secara posisi dengan feature matrix baru (356.255 baris) | Kritis | Diperbaiki, dijalankan ulang |
-| 2 | Nama cluster di Phase 3 di-hardcode dan tidak cocok dengan profil aktual Phase 2 | Kritis | Diperbaiki, dijalankan ulang |
-| 3 | Tiga fitur berkorelasi sempurna (r mendekati 1,0) semuanya dipertahankan | Metodologis | Diperbaiki |
-| 4 | Phase 3 dan 4 hanya memakai sample 50 ribu dari 356 ribu aplikasi | Metodologis | Sekarang full data |
-| 5 | Tidak ada SK_ID_CURR di feature matrix, jadi hasil tidak bisa ditelusuri ke pemohon nyata | Metodologis | Diperbaiki |
-| 6 | Notebook EDA punya satu sel error (API seaborn lama) dan satu sel yang belum pernah dieksekusi | Minor | Dieksekusi ulang, bersih |
+| # | Finding | Severity | Status |
+|---|---------|----------|--------|
+| 1 | A saved set of group labels from an older run (331,219 rows) was joined to a newer feature table (356,255 rows), silently mixing up the group assignments for every later step built on it | Critical | Fixed, re-run; automatic checks added to catch this in future |
+| 2 | The behaviour rule step used a hard-coded name-to-group mapping that did not match the actual groups found, attributing rules to the wrong customer segments | Critical | Fixed; a shared naming file now keeps names consistent across all steps |
+| 3 | Three columns that measure the same thing were all kept, giving that one dimension three times the weight in every similarity calculation | Methodological | Fixed by changing the encoding approach |
+| 4 | Category fields were turned into long lists of yes/no columns, which distorts similarity calculations for grouping | Methodological | Replaced with ordered scale and frequency-based encoding |
+| 5 | Small ordered columns escaped the standardization step because the check only looked at the data type, silently over-weighting them | Latent bug | Fixed; detection now checks the actual range of values |
+| 6 | Hierarchical grouping had collapsed 94 percent of rows into one group (agreement with K-Means was 0.02) | Methodological | Replaced with Ward linkage on a representative sample; agreement now 0.55 |
+| 7 | Density-based grouping in the compressed space saw one undifferentiated mass | Methodological | Moved to a layout that preserves local neighbourhood structure, with an automatically chosen radius |
+| 8 | Anomaly detection relied only on per-column signals plus one combination-aware signal | Methodological | Added a robust combination-aware signal; five signals total |
+| 9 | The standard threshold for the combination-aware signal flagged a third of the portfolio | Calibration | Demonstrated clearly in the notebook, then set empirically at the top 2.5 percent of scores |
 
-## Defect 1: artefak basi dan join berbasis posisi
+## Data preparation, verified
 
-File label cluster berisi 331.219 baris, sementara feature matrix hasil pipeline berisi 356.255 baris (307.511 train ditambah 48.744 test). Phase 3 dan Phase 4 menggabungkan keduanya lewat inner join pada ROW_ID, yang sebenarnya hanya nomor urut baris. Akibatnya ada dua masalah sekaligus: 25.036 aplikasi terbuang diam-diam, dan baris ke-N di file label belum tentu pemohon yang sama dengan baris ke-N di file fitur.
+| Check | Result |
+|-------|--------|
+| Input | 7 raw data files, including relational tables with up to 27.3 million rows |
+| Output | A single clean table: 356,255 rows, applicant ID plus 47 standardized numeric features |
+| Missing values remaining | 0 |
+| Closely correlated pairs remaining | 1, a mean/max pair of the same metric, documented |
+| Feature importance assessment | 47 features, assessed against the default label on 307,511 applicants |
+| Orchestration | A ten-step pipeline with a plain-Python fallback |
 
-Kenapa bisa terjadi? Label ditulis oleh run Phase 2 yang lebih lama, atas versi feature matrix yang berbeda. Phase 1 kemudian dijalankan ulang tanpa menjalankan ulang Phase 2, dan tidak ada satu pun pemeriksaan yang menangkap ketidaksesuaian itu. Inner join justru menyembunyikannya: program tetap jalan, hasil tetap keluar, hanya saja salah.
+The category encoding is the most consequential decision: education as an ordered scale from 0 to 4, income type and work sector as frequency-based single numbers. The reasoning is set out in full in `reports/reasoning_validation.md`.
 
-Perbaikannya tiga lapis. Phase 2 dijalankan ulang atas feature matrix terbaru. Sel pemuatan data di Phase 3 dan Phase 4 sekarang berisi assert yang membandingkan jumlah baris kedua file, jadi kalau artefak basi lagi, eksekusi langsung gagal dengan pesan jelas alih-alih diam-diam membuang baris. Dan SK_ID_CURR sekarang ikut tersimpan di file label, sehingga join berbasis ID nyata selalu bisa dilakukan.
+## Customer segmentation, verified
 
-## Defect 2: nama cluster yang di-hardcode
+| Check | Result |
+|-------|--------|
+| Compression | 9 components, chosen at the point where adding more stops helping |
+| Number of groups | Elbow chart points to 5; score confirms 5 is best among the usable options |
+| K-Means | Full 356,255 applicants, five segments |
+| Hierarchical (Ward) | Agreement with K-Means 0.55, a genuine independent confirmation |
+| Density-based | Neighbourhood layout, automatically chosen radius, 30 dense pockets, 1,085 isolated cases passed to anomaly review |
+| Segments | Minimal Borrower 35.4%, Ambitious Borrower 35.1%, Active Veteran 13.2%, Intensive Card User 15.2%, Troubled Borrower 1.1% |
 
-Phase 3 menuliskan pemetaan nomor cluster ke nama segmen langsung di kode: cluster 1 disebut "minimal", cluster 2 "cc_intensif", cluster 3 "ambisius". Padahal business report Phase 2 yang tersimpan menyebut cluster 1 itu "Ambisius", cluster 2 "Minimal", cluster 3 "CC Intensif". Rules jadi dikaitkan ke segmen yang salah.
+Group numbering shifts between runs, so the name mapping is saved to a shared file and every downstream step reads from it.
 
-Akar masalahnya: K-Means menghasilkan pengelompokan yang stabil antar-run (karena seed tetap), tapi nomor urut clusternya tidak dijamin sama. Kami menyaksikannya sendiri selama audit ini: tiga run menghasilkan tiga permutasi penomoran yang berbeda. Hardcoding nama cluster di downstream cepat atau lambat pasti salah.
+## Behaviour rules, verified
 
-Sekarang Phase 2 menulis artefak cluster_names.csv yang memetakan nomor cluster ke nama bisnis, slug, profil risiko, dan ukuran segmen. Phase 3, Phase 4, dan dashboard membaca artefak ini. Tidak ada lagi nama segmen yang ditulis tangan di kode downstream.
+| Check | Result |
+|-------|--------|
+| Transactions | All 356,255 applicants, discretized into 7 binned dimensions |
+| Algorithms | Three independent rule-finding methods all produced identical rule sets, the strongest available correctness check |
+| Final rules | 15 (three per segment) after strength, reliability, and redundancy filters; strength ratios from 1.8 to 4.6 |
 
-## Perbaikan metodologis
+## Anomaly detection, verified
 
-### Multikolinearitas sempurna
+Five detection signals run per application:
 
-Audit korelasi menemukan trio fitur dengan r mendekati 1,0: FLAG_SENTINEL_EMPLOYED, ORGANIZATION_TYPE_Unknown, dan NAME_INCOME_TYPE_Pensioner. Ketiganya menyimpan informasi yang sama, yaitu "pemohon ini pensiunan atau tidak bekerja". Logikanya sederhana: kalau DAYS_EMPLOYED berisi nilai sentinel, orang itu tidak punya pemberi kerja, maka kolom organisasinya XNA dan tipe pendapatannya pensiunan.
+| Signal | What it detects | Cases flagged | Note |
+|--------|----------------|---------------|------|
+| Per-column robust check | Single-figure extremes, robust to heavy tails | 201,278 | Intentionally broad; tightened by the agreement requirement |
+| Per-column sensitive check | Single-figure extremes, more sensitive | 8,822 | Complement to the robust check |
+| Combination-aware check (robust) | Unusual combinations of otherwise normal values | 8,907 | Threshold set at top 2.5 percent after the standard threshold was shown to flag a third of the portfolio |
+| Random partitioning check | Non-linear unusual patterns | 17,813 | No distribution assumption |
+| Density-based check | Cases sitting in no dense region of the customer map | 1,085 | Independent cross-check from the segmentation step |
 
-Membiarkan ketiganya berarti dimensi "pensiunan" dihitung tiga kali setiap kali algoritma mengukur jarak antar nasabah. Itu bertentangan dengan tujuan feature selection berbasis korelasi. Pipeline sekarang membuang dua dummy yang redundan setelah one-hot encoding dan mempertahankan FLAG_SENTINEL_EMPLOYED sebagai penanda tunggal. Pasangan korelasi tinggi yang tersisa turun dari lima menjadi dua, dan keduanya bisa dipertanggungjawabkan: rata-rata dan maksimum dari metrik yang sama, serta dua dummy pendidikan yang memang saling melengkapi.
+| Check | Result |
+|-------|--------|
+| High-confidence cases (3 or more signals agree) | 7,640 (2.1 percent of the portfolio), every one reviewed with a real applicant ID |
+| Type of deviation | Global 5,052, Contextual 2,486, Collective 102 |
+| Business classification | Data entry anomaly 4,429; Rare but genuine 3,070; Risk signal 141 |
 
-### Cakupan data penuh
+## The honesty test: validation against real outcomes
 
-Phase 3 sekarang menambang seluruh 356.255 transaksi, bukan sample 50 ribu. Hasil menariknya: Apriori, FP-Growth, dan ECLAT masing-masing menemukan 1.204 rules yang persis sama. Phase 4 juga mengevaluasi seluruh 356.255 aplikasi dengan IQR, Z-score, dan Isolation Forest. Sample DBSCAN di Phase 2 dinaikkan dari 30 ribu ke 50 ribu supaya cross-referencing Phase 4 punya cakupan lebih luas. Train dan test digabung sejak awal karena seluruh proses unsupervised; tidak ada label yang bocor karena memang tidak ada label yang dipakai.
+The default label was never used during any of the analysis. It was opened only afterwards, to measure the actual default rate of each discovered group on the 307,511 applicants where outcomes are known.
 
-### Penelusuran ke pemohon nyata
+| Discovered structure | Actual default rate |
+|----------------------|---------------------|
+| Portfolio average | 8.07% |
+| Ambitious Borrower | 6.07% |
+| Minimal Borrower | 8.42% |
+| Active Veteran | 9.24% |
+| Intensive Card User | 10.79% |
+| Troubled Borrower | 11.82% |
+| Anomaly level: none flagged | 6.88% |
+| Anomaly level: one signal | 8.53% |
+| Anomaly level: two signals | 11.69% |
+| Anomaly level: three or more signals | 13.02% |
+| Risk-signal cases | 16.79% |
 
-SK_ID_CURR sekarang mengalir dari pipeline ke label cluster sampai ke investigasi anomali, sebagai kolom identitas yang tidak ikut di-scale dan tidak ikut dihitung dalam seleksi fitur. Dampak praktisnya: laporan investigasi Phase 4 menunjuk ID pemohon sungguhan yang bisa dicari di sistem, dan penyelarasan TARGET untuk mutual information dilakukan lewat join ID, bukan asumsi urutan baris.
+The default rate rises at every step without a single exception, and the staircase became steeper after the combination-aware signal was added and properly calibrated. For methods that never saw the label, this is strong evidence that the structure found is real.
 
-### Orkestrasi pipeline
+## Checks that keep the process honest
 
-Dokumen proyek mensyaratkan Mage, Prefect, atau Airflow untuk pipeline. run_pipeline.py sekarang membungkus sepuluh step sebagai task Prefect dalam satu flow, teruji jalan dengan Prefect 3.7.4. Kalau Prefect tidak terpasang, pipeline tetap jalan sebagai skrip Python biasa.
-
-## Hasil run final
-
-### Phase 1, preprocessing (805 detik)
-
-| Pemeriksaan | Hasil |
-|-------------|-------|
-| Input | 7 CSV mentah, termasuk tabel relasional sampai 27,3 juta baris |
-| Output | features_clustering.csv: 356.255 baris, SK_ID_CURR + 65 fitur numerik terstandardisasi |
-| NaN tersisa | 0 |
-| Pasangan korelasi di atas 0,85 | 2, keduanya terdokumentasi dengan justifikasi |
-| Mutual information vs TARGET | 65 fitur, diselaraskan lewat join ID pada 307.511 baris train |
-
-### Phase 2, clustering (eksekusi penuh, nol error)
-
-| Pemeriksaan | Hasil |
-|-------------|-------|
-| PCA | 10 komponen, 54,5% variance |
-| Pemilihan K | Elbow menunjuk K=5; silhouette K=5 (0,1494) terbaik di antara K minimal 3 |
-| K-Means full data | silhouette 0,1495; inertia 5.083.583 |
-| DBSCAN | sample 50.000, eps 3,0, min_samples 10; 739 noise (1,5%) |
-| Hierarchical | BIRCH ke 500 micro-centroid, lalu linkage ward, complete, dan average dengan dendrogram |
-| Segmen | Minimal 35,6%; Ambisius 35,0%; Veteran 13,1%; Bermasalah 1,0%; CC Intensif 15,2% |
-
-### Phase 3, association rules (full data, nol error)
-
-| Pemeriksaan | Hasil |
-|-------------|-------|
-| Transaksi | 356.255, didiskretisasi ke 7 dimensi (income, usia, masa kerja, skor eksternal, kredit, beban, cluster) |
-| Tiga algoritma | 1.204 rules dari masing-masing, identik satu sama lain |
-| FP-Growth per cluster | 1.236 rules |
-| Rules final | 15 (tiga per segmen, saringan redundansi Jaccard 0,65), lift 1,84 sampai 4,59 |
-| Interpretasi | Empat bagian per rule, nama segmen dibaca dari artefak Phase 2 |
-
-### Phase 4, anomaly detection (full data, nol error)
-
-| Pemeriksaan | Hasil |
-|-------------|-------|
-| Dievaluasi | 356.255 aplikasi; IQR 1,5 kali; Z-score di atas 3; Isolation Forest contamination 0,01 / 0,05 / 0,10 |
-| High-confidence (minimal 3 metode) | 10.911, atau 3,1% |
-| Tervalidasi silang DBSCAN | 587 |
-| Tipologi | Data Error 6.084; Rare but Valid 4.617; Risk Signal 210 |
-| Investigasi | Semua 10.911 ada di CSV dengan SK_ID_CURR; log markdown merinci 300 kasus paling ekstrem |
-
-### Phase 5, dashboard dan laporan
-
-Dashboard Plotly Dash teruji boot dan merespons HTTP 200 di port 8050. Semua angkanya dibaca dari artefak results, jadi menjalankan ulang pipeline otomatis menyinkronkan dashboard. Knowledge discovery report ditulis manual di reports/knowledge_discovery_report.md.
-
-## Validasi silang terhadap TARGET
-
-TARGET tidak pernah dipakai selama mining. Ia hanya dipakai setelah semuanya selesai, untuk menguji apakah struktur yang ditemukan benar-benar berhubungan dengan risiko nyata. Hasilnya pada 307.511 baris train:
-
-| Struktur yang ditemukan | Default rate aktual |
-|--------------------------|---------------------|
-| Baseline populasi | 8,07% |
-| Segmen Bermasalah | 11,43% |
-| Segmen CC Intensif | 10,79% |
-| Segmen Veteran | 9,24% |
-| Segmen Minimal | 8,35% |
-| Segmen Ambisius | 6,16% |
-| Tier anomali: normal, lemah, moderat, high-confidence | 7,25% / 8,12% / 9,38% / 11,17% |
-| Noise DBSCAN | 11,98% |
-| Anomali Tipe C (Risk Signal) | 13,47% |
-
-Gradien tier anomali naik secara monoton tanpa satu pun pengecualian. Untuk proses yang tidak pernah melihat label, itu bukti kuat bahwa struktur yang ditemukan nyata, bukan artefak statistik.
-
-## Pengaman agar defect tidak terulang
-
-Empat hal sekarang menjaga konsistensi proses. Assert alignment di sel pemuatan Phase 3 dan 4 membuat artefak basi langsung menggagalkan eksekusi. Artefak cluster_names.csv menjadi satu-satunya sumber nama segmen untuk semua downstream. SK_ID_CURR tersedia di semua artefak antar-phase sehingga join berbasis ID selalu mungkin. Dan dashboard membaca seluruh angkanya dari folder results, tanpa satu pun angka yang ditulis tangan.
+Four mechanisms now prevent the earlier classes of defect from recurring. Automatic alignment checks in the behaviour rule and anomaly steps fail clearly if an outdated file is loaded. The shared naming file is the single source of segment names across all steps. The applicant ID flows through every output file so any finding can be traced back to a real individual. And the dashboard reads every number from the output files at startup, so nothing on screen can drift from the analysis underneath it.

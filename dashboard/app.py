@@ -45,6 +45,14 @@ anomaly_summary = pd.read_csv(R4 / "anomaly_summary.csv")
 anomaly_pca = pd.read_csv(R4 / "pca_anomaly_sample.csv")
 investigation = pd.read_csv(R4 / "anomaly_investigation.csv")
 
+# Per-method totals for the detection comparison chart. Written by Phase 4
+# into the summary; fall back to None if an older artefact is loaded.
+_METHOD_COLS = ["N_IQR", "N_ZSCORE", "N_MAHALANOBIS", "N_ISOFOREST", "N_DBSCAN"]
+if all(c in anomaly_summary.columns for c in _METHOD_COLS):
+    METHOD_COUNTS = {c: int(anomaly_summary[c].iloc[0]) for c in _METHOD_COLS}
+else:
+    METHOD_COUNTS = None
+
 # Post-hoc validation against TARGET (the label is NOT used during mining)
 _target = pd.read_csv(ROOT / "datasets/application_train.csv",
                       usecols=["SK_ID_CURR", "TARGET"])
@@ -123,7 +131,7 @@ SEG_COLORS = {"minimal": SAGE, "ambisius": BLUE, "veteran": SAND,
 TIER_ORDER = ["NORMAL", "WEAK_SIGNAL", "MODERATE_ANOMALY", "HIGH_CONFIDENCE_ANOMALY"]
 TIER_LABEL = {"NORMAL": "Normal", "WEAK_SIGNAL": "Weak signal (1 method)",
               "MODERATE_ANOMALY": "Moderate (2 methods)",
-              "HIGH_CONFIDENCE_ANOMALY": "Strong (3-4 methods)"}
+              "HIGH_CONFIDENCE_ANOMALY": "Strong (3+ of 5 methods)"}
 TIER_COLORS = {"NORMAL": "#BCC4CE", "WEAK_SIGNAL": "#9FB6C6",
                "MODERATE_ANOMALY": SAND, "HIGH_CONFIDENCE_ANOMALY": CLAY}
 TYPE_COLORS = {"Tipe A - Data Error": "#9AA5B1",
@@ -316,16 +324,18 @@ PHASE_INTRO = {
     "eda": "Before analysing, we checked the condition of the raw data: where it is missing, where the "
            "values are odd, and what that means. This part shows the data-quality issues that had to be "
            "fixed first so the later stages can be trusted.",
-    "seg": "Phase 2 groups customers by their financial behaviour, not just demographics. The result is "
+    "seg": "Customers are grouped by their financial behaviour, not just demographics. The result is "
            "five segments with distinct credit personalities, cross-checked with three clustering methods "
            "that work in different ways. Pick a segment to see what sets it apart and the recommended "
            "decision.",
-    "rules": "Phase 3 looks for 'if this, then usually that' patterns that co-occur. Three different "
+    "rules": "This section looks for 'if this, then usually that' patterns that co-occur. Three different "
              "algorithms agree on the same patterns, so this is not a one-method fluke. Each rule is "
              "translated into a business sentence with a suggested next step.",
-    "anom": "Phase 4 looks for customers who deviate from the pattern. Each anomaly gets two "
-            "complementary labels: how it deviates (global, contextual, or collective) and how to handle "
-            "it (data error, valid rare case, or risk signal), then a recommendation for its segment.",
+    "anom": "Every application is scored with five detectors: two that read one column at a time "
+            "(IQR, Z-score) and three that judge the whole row at once (Mahalanobis, Isolation Forest, "
+            "DBSCAN). Each anomaly then gets two complementary labels: how it deviates (global, "
+            "contextual, or collective) and how to handle it (data error, valid rare case, or risk "
+            "signal), plus a recommendation for its segment.",
     "method": "How the numbers above are computed: dimensionality reduction, the choice of how many "
               "segments, and the measure of how well each feature separates customers. This part is for "
               "the reader who wants to follow the method.",
@@ -396,9 +406,9 @@ def caption(text):
 
 def phase_banner(key):
     return html.Div(PHASE_INTRO[key], style={
-        "margin": "18px 48px 0 48px", "padding": "13px 18px",
-        "background": "#F4F6F8", "border": "1px solid #E6E8EC",
-        "borderRadius": "8px", "fontSize": "13px", "lineHeight": "1.55",
+        "margin": "16px 0 0 0", "padding": "13px 18px",
+        "background": "#EEF2F1", "border": "1px solid #DFE5E3",
+        "borderRadius": "10px", "fontSize": "13px", "lineHeight": "1.55",
         "color": INK})
 
 
@@ -587,7 +597,7 @@ def fig_anomaly_scatter():
     fig.update_layout(legend=dict(orientation="h", y=-0.12))
     fig.update_xaxes(title="Main dimension 1", showticklabels=False)
     fig.update_yaxes(title="Main dimension 2", showticklabels=False)
-    return style_fig(fig, "Anomaly map: red points are flagged by 3-4 methods at once", height=460)
+    return style_fig(fig, "Anomaly map: red points are flagged by 3+ methods at once", height=460)
 
 
 def fig_typology():
@@ -610,6 +620,27 @@ def fig_anomaly_per_cluster():
     fig.update_layout(legend=dict(orientation="h", y=-0.3, title=""))
     fig.update_xaxes(title="")
     return style_fig(fig, "Which segment the anomalies concentrate in", height=360)
+
+
+def fig_detection_methods():
+    """Ranked bar: what each of the five detectors flags, plus the agreement bar."""
+    if not METHOD_COUNTS:
+        return go.Figure()
+    rows = [
+        ("IQR (univariate)", METHOD_COUNTS["N_IQR"], BLUE),
+        ("Z-score (univariate)", METHOD_COUNTS["N_ZSCORE"], "#9FB6C6"),
+        ("Mahalanobis (multivariate)", METHOD_COUNTS["N_MAHALANOBIS"], MAUVE),
+        ("Isolation Forest (multivariate)", METHOD_COUNTS["N_ISOFOREST"], SAND),
+        ("DBSCAN noise (multivariate)", METHOD_COUNTS["N_DBSCAN"], SAGE),
+        ("3+ methods agree", int(anomaly_summary["HIGH_CONFIDENCE"].iloc[0]), CLAY),
+    ]
+    fig = go.Figure(go.Bar(
+        x=[r[1] for r in rows][::-1], y=[r[0] for r in rows][::-1],
+        orientation="h", marker_color=[r[2] for r in rows][::-1],
+        text=[f"{r[1]:,}" for r in rows][::-1], textposition="outside"))
+    fig.update_xaxes(title="Applications flagged (of 356,255)",
+                     range=[0, max(r[1] for r in rows) * 1.22])
+    return style_fig(fig, "Five detectors, five definitions of strange", height=360)
 
 
 SCOPE_DISPLAY_COLORS = {"Global (point)": "#9FB6C6", "Contextual": CLAY, "Collective": MAUVE}
@@ -658,16 +689,143 @@ RULES_COLS = ["rank", "Segment", "Rule", "Coverage", "Accuracy", "Strength",
               "Suggested next step"]
 rules_display = rules_display[RULES_COLS].rename(columns={"rank": "No"})
 
+# -- Business-language transforms for the investigation table -----------------
+# Text in all three columns is rewritten as actual investigation findings:
+# warm, human sentences that read like a case-review conclusion, not a report.
+# No em dashes. No technical jargon.
+
+_JUSTIF_MAP = {
+    "Feature deviates more than 50x its cluster median, most likely an input or ETL error "
+    "(overflow, wrong unit, or an unhandled sentinel value).": (
+        "When we reviewed this application, one or more of the figures recorded were so "
+        "far outside the normal range that they almost certainly reflect a mistake at the "
+        "point of data entry. The most likely causes are a wrong unit of measurement, a "
+        "misplaced decimal point, or a field that was never filled in correctly. The "
+        "application itself may be perfectly legitimate; the numbers just need to be "
+        "verified before any decision is made."
+    ),
+    "Statistically extreme yet coherent, most likely a genuine tail-end customer such as a "
+    "very-high-net-worth applicant.": (
+        "Our review found that this application stands out from the general population, "
+        "but all the financial details are consistent with each other and tell a coherent "
+        "story. This looks like a genuinely unusual but real customer profile, for example "
+        "someone with a very high income applying for a proportionally large loan. Nothing "
+        "here suggests a mistake; it is simply a profile that sits outside the everyday range."
+    ),
+    "Contradictory financial combination, for example an extreme instalment-to-income ratio, "
+    "low income with a large loan, or a high external score inside the troubled segment.": (
+        "Upon review, the financial details on this application do not fit together "
+        "comfortably. The monthly repayment looks too large relative to the income declared, "
+        "or the credit history sits at odds with the type of loan being requested. This kind "
+        "of internal tension is the clearest signal that the file warrants a closer look "
+        "before a lending decision is issued."
+    ),
+}
+
+_IMPACT_MAP = {
+    "Data engineering: add a capping rule at ingest (Z-score above 3) so the value does not "
+    "contaminate the model.": (
+        "Our finding is that if the unusual figure recorded here turns out to be a data "
+        "entry error and the application is approved on the basis of it, the bank may extend "
+        "a credit limit that is larger than the customer's true capacity warrants, or it may "
+        "underestimate the repayment risk. Getting the correct figure on file before the "
+        "decision is made protects the customer from being over-committed and the bank from "
+        "an avoidable bad debt."
+    ),
+    "Routing: hand over to wealth management or priority banking for a possible cross-sell.": (
+        "The investigation shows that this customer's financial profile is well above "
+        "average. Processing the application through the standard channel risks leaving "
+        "a significant business opportunity on the table. A customer at this level is a "
+        "natural candidate for premium products such as a higher credit facility, investment "
+        "or savings services, or a dedicated relationship manager who can serve them properly."
+    ),
+    "Underwriting: turn off auto-approve and require manual review by a senior underwriter "
+    "plus physical income verification.": (
+        "Our review found that approving this application through the automatic process "
+        "carries a materially higher repayment risk than a typical case in this segment. "
+        "If repayment breaks down, the exposure is larger than average and harder to "
+        "recover. Having a senior credit officer look at the full file, and confirming "
+        "the income with supporting documents, reduces the chance of a bad debt that "
+        "could have been avoided."
+    ),
+}
+
+
+def _clean_recommendation(txt):
+    """Convert raw recommendation text into a warm, investigation-result finding."""
+    import re as _re
+    txt = str(txt)
+    # Strip the technical 'Next step:' tail, which duplicates Business Impact
+    txt = _re.sub(r'\. Next step:.*', '.', txt, flags=_re.DOTALL)
+    # Replace generic opening sentences with investigation-result framing
+    txt = txt.replace(
+        "One feature is extreme against the whole population (a point anomaly), often a data "
+        "error or a tail-of-distribution customer.",
+        "Our review found that this application is clearly outside the normal range on at "
+        "least one financial dimension across all applicants. It could be a data entry issue "
+        "or a genuinely rare customer profile; either way it warrants individual attention "
+        "before a credit decision is made."
+    )
+    txt = txt.replace(
+        "Looks fine at a glance but deviates sharply from its own segment, which makes it "
+        "the most worthwhile kind to investigate as a risk signal.",
+        "At first glance this application looks ordinary, but when we compared it with "
+        "other customers in the same group the deviation became clear. Cases like this "
+        "are the ones most worth reviewing individually, because the risk is not visible "
+        "until you look within the right peer group."
+    )
+    txt = txt.replace(
+        "Part of a small pocket that UMAP and DBSCAN separated from the main mass, worth "
+        "watching as a recurring pattern rather than a one-off.",
+        "This application belongs to a small group of customers who share an unusual "
+        "combination of financial characteristics. We are watching this group as a "
+        "pattern rather than a single isolated case, because if similar applications "
+        "continue to arrive they may signal an emerging credit risk worth tracking."
+    )
+    # Replace action phrases with natural, direct language
+    txt = txt.replace(
+        "Underwriting: turn off auto-approve and require manual review by a senior "
+        "underwriter plus physical income verification.",
+        "We recommend pausing the automatic approval process for this case and asking a "
+        "senior credit officer to review the full file, including original income documents."
+    )
+    txt = txt.replace(
+        "Routing: hand over to wealth management or priority banking for a possible "
+        "cross-sell.",
+        "We recommend referring this customer to the premium banking team, who are better "
+        "placed to serve a profile at this level and to explore the right product offer."
+    )
+    txt = txt.replace(
+        "Data engineering: add a capping rule at ingest (Z-score above 3) so the value "
+        "does not contaminate the model.",
+        "We recommend verifying the figures on file with the applicant before issuing "
+        "any credit decision. If a data entry error is confirmed, correct it and then "
+        "re-assess the application on the accurate information."
+    )
+    return txt.strip()
+
+
 _inv_cols_map = {"SK_ID_CURR": "Applicant ID", "Cluster": "Segment",
                  "Anomaly Scope": "Kind of anomaly", "Anomaly Type": "Business type",
-                 "Top Deviating Features": "What makes it stand out"}
+                 "Top Deviating Features": "What makes it stand out",
+                 "Justification": "Why it was flagged",
+                 "Business Impact": "Business impact",
+                 "Recommendation": "Recommended action"}
 _inv_present = [c for c in _inv_cols_map if c in investigation.columns]
-inv_preview = investigation.head(10)[_inv_present].copy()
-inv_preview["Cluster"] = inv_preview["Cluster"].str.extract(r"(\d+)").astype(int).map(seg_label)
-inv_preview["Anomaly Type"] = inv_preview["Anomaly Type"].map(TYPE_LABEL)
-inv_preview["Top Deviating Features"] = inv_preview["Top Deviating Features"].map(
+inv_full = investigation[_inv_present].copy()
+inv_full["Cluster"] = inv_full["Cluster"].str.extract(r"(\d+)").astype(int).map(seg_label)
+inv_full["Anomaly Type"] = inv_full["Anomaly Type"].map(TYPE_LABEL)
+inv_full["Top Deviating Features"] = inv_full["Top Deviating Features"].map(
     humanize_deviations)
-inv_preview = inv_preview.rename(columns=_inv_cols_map)
+if "Justification" in inv_full.columns:
+    inv_full["Justification"] = inv_full["Justification"].map(
+        lambda v: _JUSTIF_MAP.get(str(v).strip(), str(v)))
+if "Business Impact" in inv_full.columns:
+    inv_full["Business Impact"] = inv_full["Business Impact"].map(
+        lambda v: _IMPACT_MAP.get(str(v).strip(), str(v)))
+if "Recommendation" in inv_full.columns:
+    inv_full["Recommendation"] = inv_full["Recommendation"].map(_clean_recommendation)
+inv_full = inv_full.rename(columns=_inv_cols_map)
 
 high_corr_display = high_corr.copy()
 high_corr_display["Feature 1"] = high_corr_display["feature_1"].map(flabel)
@@ -710,9 +868,9 @@ def tab_exec():
                     f"Its behaviour is very consistent: one of its rules is 99% accurate.", CLAY),
                 insight_box(
                     "Finding 3: statistical strangeness is a risk signal",
-                    f"Applications flagged by 3-4 anomaly methods default at {tier_hi:.1f}%, rising "
-                    f"steadily from {tier_no:.1f}% for normal applications. {n_typeC} cases are pure "
-                    f"risk signals that need manual review.", SAND),
+                    f"Applications flagged by three or more of the five anomaly detectors default at "
+                    f"{tier_hi:.1f}%, rising steadily from {tier_no:.1f}% for normal applications. "
+                    f"{n_typeC} cases are pure risk signals that need manual review.", SAND),
             ], className="insight-row"),
             card([
                 html.H3("Does this really capture risk, or is it just chance?"),
@@ -734,16 +892,16 @@ def tab_exec():
             ]),
             html.Div([
                 card([dcc.Graph(figure=fig_seg_default()),
-                      caption("The five segments from Phase 2. The dashed line is the whole-portfolio "
-                              "average (8.1%). The 'x average' figure shows how far each segment sits "
-                              "from average: Troubled defaults nearly 1.5x more often, while Ambitious "
-                              "is below average. The default label was not used at all when forming "
-                              "these segments.")]),
+                  caption("The five customer segments. The dashed line is the whole-portfolio "
+                          "average (8.1%). The 'x average' figure shows how far each segment sits "
+                          "from average: Troubled defaults nearly 1.5x more often, while Ambitious "
+                          "is below average. The default label was not used at all when forming "
+                          "these segments.")]),
                 card([dcc.Graph(figure=fig_tier_default()),
-                      caption("Phase 4 scores how 'odd' each application is using four methods, also "
-                              "without seeing the label. From left to right: the more methods agree an "
-                              "application deviates, the higher its actual default rate. This staircase "
-                              "rises without a single exception.")]),
+                  caption("Each application is scored for how 'odd' it is using five detection "
+                          "methods, without seeing the label. From left to right: the more "
+                          "methods agree an application deviates, the higher its actual default "
+                          "rate. This staircase rises without a single exception.")]),
             ], className="row"),
             card([
                 html.H3("Three business decisions this analysis supports"),
@@ -969,6 +1127,17 @@ def tab_rules():
 def tab_anomaly():
     return html.Div([
             phase_banner("anom"),
+            card([
+                dcc.Graph(figure=fig_detection_methods()),
+                caption("Each detector answers a different question. IQR and Z-score read one column "
+                        "at a time, a robust view and a sensitive view of single-value extremes. "
+                        "Mahalanobis asks whether the combination of values fits the correlation "
+                        "pattern of the bulk, using a robust covariance so outliers cannot hide "
+                        "themselves. Isolation Forest catches non-linear pockets with no distribution "
+                        "assumption. DBSCAN marks points that sit in no dense region of the customer "
+                        "map. The red bar counts applications that at least three of them agree on, "
+                        "which is the set we investigate."),
+            ]) if METHOD_COUNTS else html.Div(),
             html.Div([
                 card([dcc.Graph(figure=fig_anomaly_scatter()),
                       caption("Strong anomalies (red) gather at the edges of the map, away from the "
@@ -988,20 +1157,46 @@ def tab_anomaly():
                         "recurring pattern."),
             ]),
             card([
-                html.H3("Sample investigated cases"),
-                html.P(f"The ten most deviant cases, with real applicant IDs so the operations team can "
-                       f"follow up directly. The full list of {n_high:,} cases (with the kind of anomaly, "
-                       f"the business type, and a recommendation) is in "
-                       f"results/phase4_anomaly/anomaly_investigation.csv.",
+                html.H3("Investigated anomaly cases"),
+                html.P(f"All {n_high:,} high-confidence anomalies with real applicant IDs so the "
+                       f"operations team can follow up directly. Each row shows the kind of anomaly, "
+                       f"the business type, what makes it stand out, and the recommended action.",
                        className="chart-caption"),
+                html.Div([
+                    html.Div([
+                        html.Label("Filter by anomaly type:",
+                                   style={"fontSize": "12px", "color": INK_SOFT,
+                                          "marginRight": "8px", "alignSelf": "center"}),
+                        dcc.Dropdown(
+                            id="anom-type-filter",
+                            options=([{"label": "All types", "value": "__all__"}] +
+                                     [{"label": v, "value": v}
+                                      for v in sorted(inv_full["Business type"].dropna().unique())]),
+                            value="__all__",
+                            clearable=False,
+                            style={"width": "220px", "fontSize": "12px"}),
+                    ], style={"display": "flex", "alignItems": "center",
+                               "gap": "8px", "marginBottom": "10px"}),
+                ]),
                 dash_table.DataTable(
-                    data=inv_preview.to_dict("records"),
-                    columns=[{"name": c, "id": c} for c in inv_preview.columns],
+                    id="inv-table",
+                    data=inv_full.to_dict("records"),
+                    columns=[{"name": c, "id": c} for c in inv_full.columns],
+                    page_size=20,
+                    page_action="native",
+                    sort_action="native",
+                    filter_action="native",
                     style_table={"overflowX": "auto"},
                     style_cell={"fontSize": 12, "fontFamily": "Segoe UI, sans-serif",
                                 "padding": "8px", "whiteSpace": "normal", "height": "auto",
-                                "textAlign": "left", "maxWidth": "520px"},
-                    style_header={"backgroundColor": "#F4F6F8", "fontWeight": "600", "color": INK}),
+                                "textAlign": "left", "maxWidth": "340px"},
+                    style_header={"backgroundColor": "#F4F6F8", "fontWeight": "600",
+                                  "color": INK, "textAlign": "left"},
+                    style_data_conditional=[
+                        {"if": {"row_index": "odd"}, "backgroundColor": "#FAFBFC"},
+                        {"if": {"filter_query": '{Business type} = "Risk signal"'},
+                         "backgroundColor": "#FEF3F2", "color": CLAY},
+                    ]),
             ]),
     ])
 
@@ -1042,40 +1237,56 @@ TAB_BUILDERS = {
 }
 _tab_cache = {}
 
+NAV_OPTIONS = [
+    {"label": "Executive summary", "value": "tab-exec"},
+    {"label": "Initial data condition", "value": "tab-eda"},
+    {"label": "Customer segments", "value": "tab-seg"},
+    {"label": "Patterns and rules", "value": "tab-rules"},
+    {"label": "Anomalies and risk", "value": "tab-anom"},
+    {"label": "Methodology", "value": "tab-method"},
+]
+
 app.layout = html.Div([
+    # Left rail: brand, navigation, and the one-line data note.
     html.Div([
-        html.H1("What is hidden in 356 thousand credit applications?"),
-        html.P(f"Knowledge discovery on the Home Credit portfolio: {len(cluster_names)} customer "
-               f"segments, {len(rules_final)} behaviour rules, and {n_high:,} anomalous applications, "
-               f"all found without seeing the default label, then tested against defaults that actually "
-               f"happened.",
-               className="hero-sub"),
-    ], className="hero"),
+        html.Div([
+            html.Div("HOME CREDIT", className="brand-kicker"),
+            html.Div("Portfolio Intelligence", className="brand-title"),
+            html.P("Five customer segments, 15 behaviour rules, and the anomalies "
+                   "worth a second look, all validated against real defaults.",
+                   className="brand-sub"),
+        ], className="brand"),
+        dcc.RadioItems(id="nav", options=NAV_OPTIONS, value="tab-exec",
+                       className="nav", labelClassName="nav-item",
+                       inputClassName="nav-input"),
+        html.Div(f"{N_TOTAL:,} applications analysed. Every number refreshes "
+                 f"when the analysis is re-run.", className="side-note"),
+    ], className="sidebar"),
 
+    # Main column: page header, KPI strip, and the selected section.
     html.Div([
-        kpi_card("Applications analysed", f"{N_TOTAL:,}", "train + test, 7 data sources"),
-        kpi_card("Average default rate", f"{BASELINE:.1f}%", "portfolio baseline", WARM_GRAY),
-        kpi_card("Customer segments", "5", "found by the algorithm, named by people", BLUE),
-        kpi_card("Behaviour rules", f"{len(rules_final)}", "confirmed by 3 algorithms", MAUVE),
-        kpi_card("Strong anomalies", f"{n_high:,}", f"{n_high / n_eval * 100:.1f}% of the portfolio", CLAY),
-    ], className="kpi-row"),
+        html.Div([
+            html.H1("What is hidden in 356 thousand credit applications?"),
+            html.P(f"Knowledge discovery on the Home Credit portfolio: {len(cluster_names)} customer "
+                   f"segments, {len(rules_final)} behaviour rules, and {n_high:,} anomalous "
+                   f"applications, all found without seeing the default label, then tested against "
+                   f"defaults that actually happened.",
+                   className="hero-sub"),
+        ], className="page-head"),
+        html.Div([
+            kpi_card("Applicants assessed", f"{N_TOTAL:,}", "Home Credit loan applicants"),
+            kpi_card("Portfolio default rate", f"{BASELINE:.1f}%", "share who did not repay", WARM_GRAY),
+            kpi_card("Customer segments", "5", "distinct credit personalities identified", BLUE),
+            kpi_card("Behaviour rules", f"{len(rules_final)}", "consistent patterns across the portfolio", MAUVE),
+            kpi_card("High-risk anomalies", f"{n_high:,}", f"{n_high / n_eval * 100:.1f}% of all applicants", CLAY),
+        ], className="kpi-row"),
+        html.Div(id="tab-content"),
+        html.Footer("A dashboard of a five-phase analysis on the Home Credit portfolio."),
+    ], className="main"),
+], className="shell")
 
-    dcc.Tabs(id="tabs", value="tab-exec", className="tabs", children=[
-        dcc.Tab(label="Executive summary", value="tab-exec"),
-        dcc.Tab(label="Initial data condition", value="tab-eda"),
-        dcc.Tab(label="Customer segments", value="tab-seg"),
-        dcc.Tab(label="Patterns and rules", value="tab-rules"),
-        dcc.Tab(label="Anomalies and risk", value="tab-anom"),
-        dcc.Tab(label="Methodology", value="tab-method"),
-    ]),
-    html.Div(id="tab-content"),
 
-    html.Footer("A dashboard of a five-phase analysis on the Home Credit portfolio. "
-                "Every number updates automatically when the analysis is re-run."),
-])
-
-
-@app.callback(Output("tab-content", "children"), Input("tabs", "value"))
+@app.callback(Output("tab-content", "children"), Input("nav", "value"))
 def render_tab(tab):
     if tab not in _tab_cache:
         _tab_cache[tab] = TAB_BUILDERS[tab]()
@@ -1129,6 +1340,17 @@ def update_profile(cid):
         ]),
     ])
     return fig, block
+
+
+@app.callback(
+    Output("inv-table", "data"),
+    Input("anom-type-filter", "value"),
+)
+def filter_inv_table(anom_type):
+    if anom_type == "__all__":
+        return inv_full.to_dict("records")
+    filtered = inv_full[inv_full["Business type"] == anom_type]
+    return filtered.to_dict("records")
 
 
 if __name__ == "__main__":

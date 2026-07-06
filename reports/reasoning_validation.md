@@ -1,143 +1,130 @@
-# Validasi Logika dan Reasoning Tiap Fase
+# Rationale and Reasoning: Decision by Decision
 
-Dokumen ini menilai **kebenaran penalaran** di balik setiap keputusan, bukan sekadar memastikan skrip berjalan. Untuk tiap fase saya tuliskan: apa yang diputuskan, mengapa itu benar, dan apa yang diperbaiki pada putaran ini.
-
-Angka final per fase ada di `reports/validation_report.md`. Di sini fokusnya logika.
+This document explains why each decision in the project is the right one, not just what the code does. For every step it walks through the choices made, the alternatives considered, and the evidence behind the pick. The final verified numbers live in `reports/validation_report.md`; this file is about the logic.
 
 ---
 
-## Phase 1 — Preprocessing
+## Data preparation
 
-### Keputusan encoding kategorikal: yang paling penting diperbaiki
+### Why category fields are not turned into yes/no columns
 
-Putaran ini mengganti satu pilihan yang keliru untuk clustering. Sebelumnya tiga variabel kategorikal di-**one-hot encode** (OHE): `NAME_EDUCATION_TYPE`, `NAME_INCOME_TYPE`, dan `ORGANIZATION_TYPE`. Hasilnya sekitar 21 kolom biner sparse di ruang fitur.
+This was the most consequential choice in the whole pipeline, and it was corrected partway through the project. The three category fields (education, income type, work sector) were originally converted into about 21 separate yes/no columns.
 
-Mengapa itu salah untuk clustering? K-Means mengukur jarak Euclidean. OHE merusaknya dua kali. Pertama, ia menambah banyak sumbu biner yang bila digabung lebih berat daripada satu fitur kontinu sungguhan, sehingga "sektor pekerjaan" diam-diam mengalahkan "rasio cicilan terhadap pendapatan". Kedua, ia memaksa setiap kategori berjarak sama dari setiap kategori lain. Padahal "Higher education" jelas lebih dekat ke "Incomplete higher" daripada ke "Lower secondary". OHE membuang fakta itu.
+That approach damages similarity calculations in two ways. First, 21 sparse columns together quietly outweigh any single continuous feature, so which sector a person works in ends up dominating the calculation over how heavy their repayment burden is. Second, it forces every category to be exactly as different from every other as possible, which is wrong for education: someone with a higher degree is plainly closer to someone with an incomplete higher degree than to someone with a lower secondary education, and the yes/no approach throws that ordering away.
 
-Perbaikannya mencocokkan encoding dengan sifat variabel:
+The fix matches each encoding to what the variable actually is:
 
-- `NAME_EDUCATION_TYPE` menjadi **ordinal 0–4** (Lower secondary sampai Academic degree). Pendidikan punya urutan nyata. Section 9 EDA menunjukkan gradien bersih antara jenjang pendidikan dan besar pinjaman, jadi satu integer terurut itu jujur sekaligus ringkas.
-- `NAME_INCOME_TYPE` dan `ORGANIZATION_TYPE` menjadi **frequency encoding**. Keduanya nominal tanpa urutan, jadi masing-masing menjadi satu sumbu "umum sampai langka" alih-alih belasan dummy sparse.
+- Education becomes a single number from 0 to 4. It is a genuine ladder, and the data shows a clean relationship between education level and loan size, so one ordered number is both accurate and compact.
+- Income type and work sector have no natural order, so each becomes a single "how common is this?" number. This collapses the whole variable into one meaningful axis without creating artificial distances between categories.
 
-Bonus logis: pendekatan ini menghapus kolinearitas sempurna yang muncul pada run lama (`FLAG_SENTINEL_EMPLOYED` ≡ `ORGANIZATION_TYPE_Unknown` ≡ `NAME_INCOME_TYPE_Pensioner`, r ≈ 1,0). Kolinearitas itu lahir justru karena OHE pada kategori "Unknown" yang berimpit dengan kelompok pensiunan. Pensiunan tetap teridentifikasi terpisah lewat `FLAG_SENTINEL_EMPLOYED`, jadi tidak ada informasi yang hilang.
+A side benefit confirmed the diagnosis: the original approach had created three columns that were identical to each other (the pensioner flag, the "Unknown" work sector column, and the "Pensioner" income type column). The new approach removed that trap entirely. The total number of features fell from 65 to 47, and the number of closely correlated pairs remaining dropped to one, a defensible case where a mean and a max of the same metric are both kept.
 
-Dampak: jumlah fitur turun dari 65 menjadi 47. Ruang yang lebih ringkas dan lebih sedikit sumbu noise adalah ruang yang lebih baik untuk algoritma berbasis jarak.
+### Why the pension/employment placeholder had to be flagged, not just corrected
 
-### Bug laten yang ikut ketahuan dan diperbaiki
+The employment-length column holds a value equivalent to one thousand years for about 18 percent of applicants, all pensioners or unemployed people for whom an employment figure does not apply. Two facts justify the treatment chosen. First, leaving it as a number would corrupt every similarity calculation: a thousand-year tenure is farther from a five-year tenure than any real human difference in the data. Second, the group is behaviourally real: their actual default rate is 5.4 percent against 8.7 percent for everyone else. So the value is flagged as a special category and then set to blank. Removing those applicants would have discarded one fifth of the portfolio; inventing a replacement number would have made up data.
 
-Saat menulis ulang encoding, terlihat deteksi "kolom biner" di step9 memakai `dtype == int8`. Akibatnya kolom ordinal kecil seperti `DEF_30_CNT_SOCIAL_CIRCLE_BIN` (nilai 0/1/2) **tidak ikut di-scale**, sehingga rentangnya diam-diam melebihi fitur lain yang sudah standar. Setelah education menjadi ordinal int8 0–4, bug yang sama akan menimpanya. Deteksi diperbaiki: sekarang berbasis himpunan nilai, hanya kolom yang benar-benar {0,1} yang dibiarkan apa adanya, ordinal ikut di-scale. Ini memperbaiki bobot jarak yang sebelumnya timpang.
+### Why missing values are handled by reason, not by one rule for everything
 
-### Reasoning langkah-langkah lain (divalidasi, tetap)
+Each gap in the data was handled based on what that gap actually means:
 
-- **Sentinel `DAYS_EMPLOYED = 365.243`.** Nilai 1.000 tahun dalam hari, menimpa 18% data, semuanya pensiunan/penganggur. Di-flag lalu di-NaN-kan. Benar: membiarkannya sebagai angka akan merusak setiap perhitungan jarak. Default rate 5,4% vs 8,7% membuktikan ia menandai keadaan nyata, bukan error.
-- **Log transform pada AMT_INCOME/CREDIT/ANNUITY.** Income condong ekstrem (maks 247x median). Tanpa winsorize p99 + log, satu nasabah mendominasi semua jarak. Logis dan standar.
-- **Triplikasi housing (`_AVG`/`_MODE`/`_MEDI`, r > 0,99).** Pertahankan `_MODE`, buang dua lainnya. Tanpa ini bobot atribut bangunan terhitung tiga kali. Benar.
-- **DAYS ke tahun positif.** Nilai negatif tak bermakna dalam jarak. Benar.
+- Flags before fills. The "no car", "no housing data", and "no bureau score" flags are created before any value is filled, because in credit data a blank often carries a meaning of its own, and filling it first would erase that signal.
+- Zero for structural absence. A blank car-age field means the applicant has no car; a blank apartment measurement means there is no apartment record. Zero here means "none", not a guess.
+- Midpoint for random gaps, used for bureau scores and similar fields where the absence looks like a collection accident rather than a message.
+- Group-level most-common for occupation type: the most frequent occupation among applicants in the same income bracket, which is more informative than a single global default.
+- Zero for empty credit history aggregates, because no records means no activity.
 
-### Handling missing value: divalidasi per konteks EDA
+One honest note is recorded rather than hidden: the main bureau score is missing for 56 percent of applicants, and filling with the midpoint piles most of the portfolio onto one value. This is kept because the separate "no score" flag already identifies that group, the midpoint is neutral, and removing the feature entirely would throw away the most useful predictor for the 44 percent who do have a score. It is a conscious compromise.
 
-Tiap imputasi punya alasan yang cocok dengan sifat kekosongannya, bukan satu resep untuk semua:
+### Why small ordered columns also need standardization
 
-- **Indikator dulu, baru isi.** `FLAG_NO_CAR`, `FLAG_NO_HOUSING_DATA`, `FLAG_EXT_SOURCE_1_MISSING` dibuat sebelum imputasi, supaya sinyal "data ini memang kosong" tidak terhapus oleh nilai isian. Ini prinsip yang tepat: di data perbankan, kosong sering membawa informasi.
-- **Imputasi nol untuk ketiadaan struktural.** `OWN_CAR_AGE` kosong berarti tidak punya mobil, kolom MODE bangunan kosong berarti bukan apartemen. Nol di sini bermakna "tidak ada", bukan tebakan.
-- **Imputasi median untuk kekosongan acak** (EXT_SOURCE_2/3, AMT_ANNUITY, dst.). Cocok untuk MCAR.
-- **Group-mode untuk OCCUPATION_TYPE** (modus per tipe pendapatan). Lebih informatif daripada modus global karena pekerjaan berkorelasi dengan tipe pendapatan.
-- **Agregat tabel relasional kosong menjadi 0.** Tidak ada catatan berarti tidak ada aktivitas. Benar.
-- **ORGANIZATION_TYPE 'Unknown' (pensiunan)** kini menjadi kategori sah dalam frequency encoding, bukan dibuang. Konsisten dengan penanganan sentinel.
+A bug was found here: the standardization step originally skipped every integer column with a small range, silently leaving small ordered fields (the social-circle category and the education ladder) at their raw scale, which gave them an outsized weight compared with everything else. The fix now checks the actual range of values rather than the data type: only genuine yes/no flags stay on their natural scale, because a yes/no flag is already on a comparable scale and leaving it that way makes the segment profiles readable as "the share of this group with this characteristic". Everything else, including ordered fields and frequency-encoded categories, is standardized.
 
-Satu catatan jujur soal `EXT_SOURCE_1` (56% kosong, di-median-impute + flag): mengisi median ke 56% data membuat mayoritas menumpuk di satu nilai. Untuk clustering ini agak menciptakan bidang padat buatan, tapi `FLAG_EXT_SOURCE_1_MISSING` memisahkan kelompok itu, dan nilai median bersifat netral sehingga tidak menarik cluster ke ekstrem. Membuang fitur ini berarti kehilangan prediktor terkuat untuk 44% yang punya skornya. Jadi median + flag adalah kompromi yang dipertahankan secara sadar.
+### Why feature selection uses both a similarity check and an importance check
 
-### Feature selection: korelasi + entropy (sesuai dokumen)
-
-Dokumen proyek mewajibkan seleksi fitur dengan korelasi DAN entropy. Keduanya ada: audit korelasi Pearson (pasangan r > 0,85 didokumentasikan, yang sempurna dibuang) dan mutual information terhadap TARGET (berbasis entropy, menangkap hubungan non-linear). Reasoning tetap valid: fitur ber-MI rendah tidak otomatis dibuang karena clustering tak harus mengikuti sinyal supervised, tetapi MI berfungsi sebagai bukti formal pemenuhan rubrik.
+The selection used two measures for two different reasons. The correlation check finds redundancy: pairs with a correlation above 0.85 are listed, and identical columns are removed because a duplicated column is a doubled weight. The importance check (how much information each feature carries about which customers eventually defaulted, including non-linear relationships) flags which features are genuinely useful. Features with low importance are not dropped automatically, because the goal is to find natural groups rather than to predict an outcome; the importance scores serve as documented, measurable evidence that the selection considered information content, not just redundancy.
 
 ---
 
-## Phase 2 — Clustering
+## Customer segmentation
 
-### Reduksi dimensi: dua ruang untuk dua tujuan (diperbaiki putaran ini)
+### Why two different compressed spaces, not one
 
-Keputusan reduksi dimensi sekarang dipisah sesuai cara kerja masing-masing algoritma, bukan satu ukuran untuk semua.
+The compression is split because different grouping methods need different things.
 
-K-Means dan hierarchical memakai **PCA dengan 9 komponen** (di bawah 10). Angka 9 bukan bulat sembarangan: pada scree plot, sumbangan tiap komponen menurun landai lalu jatuh lebih tajam dari PC9 (3,59%) ke PC10 (2,86%), jadi komponen ke-10 dan seterusnya menambah sangat sedikit. Sembilan komponen menjaga nyaris seluruh sinyal varians sambil memenuhi batas dimensi yang diminta dan tetap ringkas untuk jarak Euclidean.
+K-Means and hierarchical grouping are both distance-based, so they run on a linear compression that keeps nine components (under the required limit of ten). Nine is not a round guess: a scree chart shows that each successive component contributes a little less than the last, and then contribution drops more sharply from the ninth to the tenth, so components beyond nine add very little while keeping nine captures nearly all the useful variation.
 
-DBSCAN sekarang dijalankan di **embedding UMAP 2D**, bukan PCA. Alasannya prinsipiil: DBSCAN berbasis kepadatan, sedangkan PCA hanya menjaga varians linear dan cenderung memipihkan gumpalan padat, sehingga DBSCAN di ruang PCA dulu hanya melihat satu massa besar. UMAP memetakan struktur manifold non-linear sambil mempertahankan kepadatan lokal: gumpalan tetap rapat dan titik yang benar-benar terpencil terlihat sebagai noise. Jadi pembagian tugasnya jelas, PCA untuk yang berbasis varians (K-Means, hierarchical), UMAP untuk yang berbasis kepadatan (DBSCAN). Nilai `eps` tidak ditebak manual: dipilih otomatis dari titik belok kurva k-distance, heuristik baku DBSCAN (Ester dkk., 1996), persis trik elbow yang dipakai memilih K.
+The density-based method is handled differently. Linear compression preserves overall variance but flattens tight local groups, so the density-based method on that space tends to see one undifferentiated mass. A neighbourhood-preserving layout is used instead: tight groups stay tight, and genuinely isolated applicants land at the edges. The radius for that method is chosen automatically from the data itself, not set by hand.
 
-### Pemilihan K: logikanya benar
+### Why five groups
 
-Elbow dan silhouette dijalankan pada K = 2..10. Silhouette biasanya memuncak di K = 2, tetapi dua segmen terlalu kasar untuk keputusan bisnis. Elbow menunjuk K = 5, dan K = 5 adalah silhouette terbaik di antara K yang cukup granular (K ≥ 3). Reasoning ini benar: silhouette tertinggi absolut bukan satu-satunya kriteria; granularitas yang dapat ditafsirkan bisnis adalah pertimbangan sah dan dinyatakan eksplisit.
+Two standard charts (an elbow chart and a separation score) were both produced for group counts from two to ten. The separation score peaks at two groups, but two segments are useless for any real business decision. The elbow chart points to five, and five also has the best separation score among all the genuinely useful options (three or more). When two standard criteria and the requirement for actionable results all point to the same value, the choice is well-grounded.
 
-### Tiga algoritma, peran berbeda (benar)
+### Why three methods, and what each contributes
 
-- **K-Means** pada seluruh data sebagai segmentasi utama.
-- **DBSCAN** (di ruang UMAP) sebagai detektor noise dan kantong kepadatan, bukan pembagi segmen utama. Di embedding UMAP, gumpalan padat terpisah lebih jelas, sehingga titik noise yang dihasilkan lebih bermakna sebagai kandidat outlier yang diteruskan ke Phase 4.
-- **Hierarchical** (BIRCH ke micro-centroid lalu Ward) sebagai validasi struktur. Memakai BIRCH karena hierarchical murni pada 356K baris butuh memori O(n²) yang mustahil. Reasoning komputasi ini benar dan didokumentasikan.
+K-Means on the full data is the primary grouping, because it scales to 356,000 applicants and produces compact, describable groups. Ward hierarchical grouping is the independent check: its logic (merging the most similar pairs upward) shares nothing with K-Means' approach, so genuine agreement between them is real evidence, not a coincidence. An earlier shortcut had silently collapsed 94 percent of applicants into one group (agreement score of 0.02); the fix restored genuine agreement of about 0.55. That episode is exactly why a second method is worth running. The density-based method is the noise detector: it finds dense pockets plus a small fraction of isolated points, and those isolated points pass to the anomaly review step.
 
-### Profiling: dinamai manusia, bukan template
+### Why humans name the groups
 
-Nama segmen ditetapkan setelah membaca 10 fitur paling menyimpang per cluster, lalu divalidasi terhadap default rate aktual. Ini sesuai rubrik "named profile with business interpretation". Yang penting, penomoran cluster tidak deterministik antar run, jadi nama disimpan di artefak `cluster_names.csv` dan dibaca downstream. Logika ini sudah benar sejak perbaikan sesi sebelumnya.
-
-Dengan ruang fitur baru yang lebih ringkas, struktur cluster diharapkan lebih bersih. Angka silhouette final dikonfirmasi setelah re-run.
+The algorithm only finds the grouping. A person reads each group's top distinguishing features and assigns a business name, a risk level, and a recommendation, because "Group 3" supports no business decision and "Troubled Borrower" does. The naming is saved to a shared file because the group numbering can shift between runs even with a fixed random seed; every later step reads names from that file instead of relying on numbers, a lesson learned from an actual mislabelling incident earlier in the project.
 
 ---
 
-## Phase 3 — Association Rules
+## Behaviour rules
 
-### Diskretisasi: bermakna, bukan sembarang
+### Why equal-sized bins
 
-Tujuh dimensi kontinu diubah ke kategori via `qcut` (kuantil), sehingga tiap bin berukuran seimbang dan tidak ada bin kosong. Reasoning benar: untuk aturan asosiasi, bin kuantil memberi support yang stabil. Bin diberi label bisnis (income_low/med/high, age_young/mid/senior, dst.), bukan rentang angka mentah, sehingga aturan langsung terbaca.
+Behaviour rules need categories. Equal-sized bins are used instead of equal-width bins because they guarantee each category holds a similar share of applicants: no empty categories, and balanced coverage across items. This matters because the rule-finding algorithms are driven by how common each pattern is: skewed bins would make some categories almost invisible.
 
-### Tiga algoritma sebagai validasi silang (benar)
+### Why three algorithms for the same task
 
-Apriori, FP-Growth, dan ECLAT bekerja dengan mekanisme berbeda (level-wise, FP-tree, tidset vertikal). Ketiganya menemukan himpunan aturan yang sama persis. Logika konsistensi lintas algoritma ini kuat: bila tiga metode berbeda sepakat, aturan itu hampir pasti nyata, bukan artefak satu metode. Support, confidence, dan lift dihitung dan dipakai untuk memfilter. Memenuhi rubrik.
+Three well-established rule-finding algorithms were all run on the same data. They search the same space with very different approaches. Running all three and checking that they find the same rules is a cheap and strong correctness check: any implementation slip or sensitivity to a setting would show up as disagreement. They agreed exactly, which is the best available evidence that the mined rules are properties of the data and not artefacts of any one method.
 
-### Interpretasi spesifik per aturan (benar)
+### Why these filter thresholds
 
-Tiap aturan final mendapat empat bagian: apa isinya dalam bahasa sehari-hari, mengapa layak dipercaya (lift/confidence/support), implikasi risikonya, dan tindak lanjutnya. Dibangun dari item aktual dalam aturan dan segmen targetnya, bukan kalimat template. Memenuhi kriteria "specific, accurate, actionable".
-
----
-
-## Phase 4 — Anomaly Detection
-
-### Tiga metode plus cross-reference (benar)
-
-IQR, Z-score, dan Isolation Forest dijalankan pada seluruh data, lalu dicocokkan dengan noise DBSCAN dari Phase 2. Reasoning penggabungan benar: makin banyak metode independen sepakat sebuah aplikasi menyimpang, makin tinggi keyakinan ia benar-benar anomali, bukan kebetulan satu metode. Kombinasi metode berbasis kepadatan (DBSCAN) dan berbasis pohon (Isolation Forest) saling memperkuat.
-
-### Dua lapis klasifikasi: teori + aksi (diperkuat putaran ini)
-
-Tiap anomali kini diberi dua label yang saling melengkapi.
-
-Lapis pertama adalah kerangka teori klasik outlier (Chandola dkk., 2009), yang memang baku di literatur anomaly detection:
-
-- **Global (point)**: satu fitur ekstrem dibanding seluruh populasi. Karena fitur sudah terstandardisasi, |nilai| besar berarti jauh dari rata-rata global; inilah yang ditangkap IQR dan Z-score.
-- **Contextual**: nilainya wajar secara umum, tetapi menyimpang tajam dari pola segmennya sendiri. Pemakaian kartu tinggi normal bagi "CC Intensif" tapi janggal bagi "Minimal". Jenis ini paling layak diselidiki sebagai sinyal risiko karena menandai nasabah yang tidak berperilaku seperti kelompoknya.
-- **Collective**: bagian dari kantong kecil yang dipisahkan UMAP/DBSCAN dari massa utama; dipantau sebagai pola berulang, bukan kasus tunggal.
-
-Lapis kedua adalah tipe bisnis yang menentukan aksi: Tipe A (kesalahan data, deviasi > 50x median segmen) diperbaiki di ETL; Tipe B (langka tapi sah) dialihkan ke layanan prioritas; Tipe C (sinyal risiko, kombinasi finansial kontradiktif) masuk review manual. Kedua lapis ini cocok dengan tipologi outlier yang sudah disiapkan di Section 6 EDA, dan tiap kasus mendapat rekomendasi yang disesuaikan dengan domain segmennya (mis. anomali di segmen Bermasalah langsung dieskalasi, di CC Intensif diperiksa lonjakan utilisasinya).
-
-### Validasi terhadap TARGET (benar dan kuat)
-
-Setelah semua selesai, default rate aktual dihitung per tingkat anomali. Gradien naik monoton dari normal sampai anomali kuat membuktikan deteksi menangkap risiko nyata, padahal tidak pernah melihat label. Ini bukti reasoning yang paling meyakinkan di seluruh proyek.
+A strength ratio of at least 1.2 removes patterns barely better than coincidence. A reliability of at least 35 percent removes patterns that fail too often to act on. The redundancy filter (removing a rule if its item overlap with an already-selected rule is too high) exists because frequent-pattern mining produces families of near-identical rules; without it the final list would say one thing many times over. Keeping the strongest few per segment forces coverage of the whole portfolio rather than letting one dense group dominate the story.
 
 ---
 
-## Phase 5 — Dashboard dan Laporan
+## Anomaly detection and investigation
 
-### Reasoning komunikasi (benar)
+### Why five signals instead of one
 
-Dashboard membaca semua angka dari artefak `results/`, jadi tidak ada nilai yang ditulis tangan dan re-run otomatis menyinkronkan tampilan. Tab disusun mengikuti alur cerita bisnis (ringkasan eksekutif lebih dulu), nama kolom teknis diterjemahkan ke istilah bisnis, dan tiap grafik diberi keterangan cara membaca. Reasoning ini sesuai rubrik "accessible to a non-technical audience".
+No single detector sees every kind of unusual case, because "unusual" is not one concept:
 
-Tab dirender lazy karena memuat belasan grafik sekaligus membekukan browser. Scatter besar memakai WebGL. Keputusan teknis ini benar untuk presentasi langsung ke klien.
+- The per-column robust check flags a value outside its column's normal range. Chosen because it handles the heavy tails typical of financial data without being thrown off by a few extreme cases.
+- The per-column sensitive check flags values far from the column's centre. Chosen as a complement where the distribution is roughly symmetrical. Both are openly blind to combinations, which motivates the three signals that follow.
+- The combination-aware signal (robust version) measures how far a row sits from the bulk along the natural correlations of the data, catching applicants whose values are each ordinary but wrong together. A classic example: a loan amount that is large only relative to that applicant's income.
+- The random partitioning signal flags rows that are easy to separate from everything else. Chosen because it assumes nothing about the shape of the data and catches unusual cases that no threshold-based method can describe.
+- The density-based signal from the segmentation step is the independent cross-check: applicants sitting in no dense region of the customer map, identified with different machinery in a different part of the process.
+
+### Why the combination-aware signal uses a robust version and is calibrated on the data
+
+Two decisions inside this method deserve their own explanation.
+
+The ordinary version of the covariance calculation suffers from a masking problem: the very unusual cases being hunted inflate the covariance themselves, stretching the reference shape around them until they look normal. The robust version fits the covariance on the tightest-fitting subset of rows, keeping the reference anchored to the ordinary bulk. It is fitted on a sample for efficiency, then every row is scored.
+
+The standard textbook threshold assumes the data follows a bell-curve shape. When we apply it here it flags roughly a third of the entire portfolio, which is a sign that credit data does not follow that shape rather than a sign that a third of applicants are genuinely unusual. The notebook demonstrates this failure clearly, then sets the threshold empirically at the top 2.5 percent of scores, keeping the flag rate comparable to the other signals so no single method dominates the ensemble. Showing the failed textbook threshold is deliberate: it documents why the adjusted choice is necessary.
+
+### Why the final verdict requires agreement between signals
+
+Each signal has a threshold, and every threshold involves some judgement. Requiring at least three of the five to agree before classifying a case as a high-confidence anomaly makes the final verdict robust to any one signal's calibration. The tiers below that (two signals: moderate concern; one signal: worth noting) are kept because they turn out to be informative: the actual default rate climbs at every tier, which was confirmed against the real outcomes after the analysis was complete.
+
+### Why two labels per case
+
+A flat list of unusual cases supports no action. The first label says how the case deviates: a single extreme figure against the whole population, a figure that is ordinary in general but unusual for its own customer group, or membership of a small cluster of applicants who stand apart together. The second label says what to do: verify the data before deciding, route to appropriate handling, or require individual credit review. The contextual class (ordinary in general, unusual for its own group) is singled out as the most investigation-worthy, because behaving unlike your own peer group is a subtler and more suspicious signal than simply being extreme. Every case carries a real applicant ID so the operations team can follow up.
 
 ---
 
-## Ringkasan perbaikan putaran ini
+## Dashboard and reporting
 
-| Hal | Sebelum | Sesudah | Alasan |
-|---|---|---|---|
-| Encoding pendidikan | OHE (4 kolom, jarak sama antar jenjang) | Ordinal 0–4 | Pendidikan berjenjang; ordinal jujur dan ringkas |
-| Encoding income & organization | OHE (~17 kolom sparse) | Frequency encoding (2 kolom) | Nominal; OHE mendominasi jarak Euclidean |
-| Scaling ordinal | int8 tidak ikut di-scale (bug) | Ordinal ikut di-scale | Mencegah rentang ordinal mendominasi |
-| Kolinearitas sempurna | Trio r ≈ 1,0 (artefak OHE) | Hilang | Pensiunan cukup ditandai satu flag |
-| Jumlah fitur | 65 | 47 | Ruang lebih ringkas, lebih baik untuk clustering |
-| Markdown EDA | Banyak tanda AI (em-dash, bold berlebih) | Prosa natural, reasoning tiap keputusan | Mudah dibaca, tetap detail |
+### Why every number is drawn from the output files, never typed by hand
+
+The dashboard reads all figures from the result files at startup, and the written reports reference the same outputs. This is a defence against the most common failure in analytical reporting: numbers that silently drift from the analysis that produced them. Re-running any step re-synchronises everything downstream.
+
+### Why the validation result is shown so prominently
+
+The default label is never used during the analysis. Showing that the groups and anomaly levels consistently produce real differences in default rates, rising in the right order without a single exception, is the strongest evidence available that what was found is real. It sits at the top of the executive view because it answers the question every decision-maker should ask first: why should I believe any of this?
+
+### Why explanations are written in plain language, not technical output
+
+Every chart carries a caption explaining how to read it, every section opens with a plain-language introduction, and technical column names are translated to business terms throughout. The reason is simple: the audience for this work is the person who will make a decision with it, and that person should never need to decode a technical label to understand a finding.

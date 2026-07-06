@@ -1,47 +1,51 @@
-# Home Credit Default Risk, proyek KDD (Phase 1 - 5)
+# Home Credit Default Risk, a KDD Project (Phases 1 to 5)
 
-Proyek data mining akademik dengan metodologi KDD (Knowledge Discovery in Databases) pada dataset Home Credit Default Risk. Seluruh 356.255 aplikasi dipakai (train 307.511 + test 48.744, digabung karena prosesnya unsupervised) bersama 5 tabel relasional yang terbesar berisi 27,3 juta baris.
+An academic data mining project that applies the KDD (Knowledge Discovery in Databases) methodology to the Home Credit Default Risk dataset. All 356,255 applications are used (307,511 train plus 48,744 test, combined because the process is unsupervised) together with 5 relational tables, the largest holding 27.3 million rows.
 
-## Struktur folder
+The full written report is [REPORT.md](REPORT.md) at the project root. Supporting documents (per-phase rationale, process validation, presentation outline) live in `reports/`.
+
+## Folder structure
 
 ```
 .
-├── datasets/                         # CSV mentah (Kaggle) + output Phase 1
-│   ├── application_train.csv         # 307K baris, 122 kolom + TARGET
-│   ├── application_test.csv          # 48K baris
+├── datasets/                         # Raw CSVs (Kaggle) + Phase 1 output
+│   ├── application_train.csv         # 307K rows, 122 columns + TARGET
+│   ├── application_test.csv          # 48K rows
 │   ├── bureau.csv, bureau_balance.csv
 │   ├── credit_card_balance.csv, installments_payments.csv
 │   ├── POS_CASH_balance.csv, previous_application.csv
 │   └── final/
-│       ├── features_clustering.csv   # Output Phase 1 (356.255 x SK_ID_CURR + 65 fitur)
-│       ├── cluster_labels.csv        # Output Phase 2 (ROW_ID + SK_ID_CURR + label 3 algoritma)
-│       └── cluster_names.csv         # Output Phase 2: pemetaan cluster_id -> nama bisnis.
-│                                     #   Downstream WAJIB membaca file ini karena nomor
-│                                     #   cluster bisa berubah antar run.
+│       ├── features_clustering.csv   # Phase 1 output (356,255 x SK_ID_CURR + 47 features)
+│       ├── cluster_labels.csv        # Phase 2 output (ROW_ID + SK_ID_CURR + labels from 3 algorithms)
+│       └── cluster_names.csv         # Phase 2 output: cluster_id to business-name mapping.
+│                                     #   Downstream MUST read this file, because cluster
+│                                     #   numbering shifts between runs.
 │
-├── docs/                             # Kriteria proyek (PDF)
+├── docs/                             # Project brief (PDF)
 │
 ├── notebooks/
-│   ├── exploratory_data_analysis.ipynb   # EDA Phase 1
-│   ├── phase2_clustering.ipynb           # Phase 2, segmentasi
+│   ├── exploratory_data_analysis.ipynb   # Phase 1 EDA
+│   ├── phase2_clustering.ipynb           # Phase 2, segmentation
 │   ├── phase3_association.ipynb          # Phase 3, rule mining (full data)
-│   └── phase4_anomaly.ipynb              # Phase 4, deteksi anomali (full data)
+│   └── phase4_anomaly.ipynb              # Phase 4, anomaly detection (full data, 5 detectors)
 │
 ├── src/
-│   ├── run_pipeline.py               # Entry point Phase 1. Prefect flow; jatuh ke
-│   │                                 #   Python biasa bila Prefect tidak terpasang
-│   └── pipeline/                     # 10 step modular; config.py berisi semua threshold
-│                                     #   beserta justifikasi EDA-nya
+│   ├── run_pipeline.py               # Phase 1 entry point. Prefect flow; falls back to
+│   │                                 #   plain Python when Prefect is not installed
+│   └── pipeline/                     # 10 modular steps; config.py holds every threshold
+│                                     #   with its EDA justification
 │
 ├── dashboard/
-│   └── app.py                        # Phase 5, dashboard interaktif Plotly Dash
+│   └── app.py                        # Phase 5, interactive Plotly Dash dashboard
 │
-├── reports/                          # Laporan yang ditulis manual
-│   ├── knowledge_discovery_report.md # Jawaban pertanyaan inti untuk pembaca bisnis
-│   ├── validation_report.md          # Audit proses end-to-end + defect yang diperbaiki
-│   └── presentation_outline.md       # Kerangka presentasi 10 menit + jawaban Mining Expo
+├── REPORT.md                         # The hand-written knowledge discovery report (all phases)
+├── reports/                          # Supporting hand-written documents
+│   ├── reasoning_validation.md       # Detailed rationale behind every decision, per phase
+│   ├── validation_report.md          # End-to-end process audit with the final figures
+│   ├── knowledge_discovery_report.md # Business-facing summary of the findings
+│   └── presentation_outline.md       # 10-minute presentation plan + Mining Expo answers
 │
-└── results/                          # Artefak per fase, semuanya hasil generate ulang
+└── results/                          # Per-phase artefacts (CSV/PNG, all regenerated on re-run)
     ├── phase1_preprocessing/
     ├── phase2_clustering/
     ├── phase3_association/
@@ -57,49 +61,39 @@ source env/bin/activate          # Linux/Mac
 pip install -r requirements.txt
 ```
 
-## Cara menjalankan (urutannya wajib)
+## How to run (the order is mandatory)
 
 ```bash
-# Phase 1, preprocessing (skrip pipeline, orkestrasi Prefect)       ~13 menit
+# Phase 1, preprocessing (pipeline script, Prefect orchestration)     ~13 minutes
 PYTHONIOENCODING=utf-8 python src/run_pipeline.py
 
-# Phase 2, clustering                                                ~6 menit
-PYTHONIOENCODING=utf-8 jupyter nbconvert --to notebook --execute --inplace notebooks/phase2_clustering.ipynb --ExecutePreprocessor.timeout=2400
+# Phase 2, clustering                                                  ~8 minutes
+PYTHONIOENCODING=utf-8 jupyter nbconvert --to notebook --execute --inplace notebooks/phase2_clustering.ipynb --ExecutePreprocessor.timeout=3000
 
-# Phase 3, association rules                                         ~4 menit
+# Phase 3, association rules                                           ~4 minutes
 PYTHONIOENCODING=utf-8 jupyter nbconvert --to notebook --execute --inplace notebooks/phase3_association.ipynb --ExecutePreprocessor.timeout=2400
 
-# Phase 4, deteksi anomali                                           ~8 menit
+# Phase 4, anomaly detection                                           ~10 minutes
 PYTHONIOENCODING=utf-8 jupyter nbconvert --to notebook --execute --inplace notebooks/phase4_anomaly.ipynb --ExecutePreprocessor.timeout=3600
 
 # Phase 5, dashboard
-python dashboard/app.py          # buka http://127.0.0.1:8050
+python dashboard/app.py          # open http://127.0.0.1:8050
 ```
 
-Phase 3 dan 4 punya pengaman: bila cluster_labels.csv tidak sejalan dengan features_clustering.csv (artefak basi dari run lama), eksekusi langsung gagal dengan pesan jelas. Solusinya jalankan ulang Phase 2.
+Phases 3 and 4 carry a guard: if `cluster_labels.csv` does not align with `features_clustering.csv` (a stale artefact from an older run), execution fails loudly with a clear message. The fix is to re-run Phase 2.
 
-## Ringkasan hasil run final
+## What each phase does, in one paragraph
 
-Phase 1 mengubah 7 CSV mentah menjadi 356.255 baris dengan 65 fitur numerik terstandardisasi tanpa NaN, plus kolom SK_ID_CURR sebagai identitas. Seleksi fitur memakai dua ukuran sesuai rubrik: korelasi Pearson (trio fitur dengan r mendekati 1,0 dibuang; tersisa 2 pasangan yang terdokumentasi) dan mutual information berbasis entropy terhadap TARGET.
+Phase 1 turns 7 raw CSVs into one clean table: 356,255 rows with 47 standardized numeric features and zero missing values, plus `SK_ID_CURR` as an identifier. Feature selection uses both required measures: a Pearson correlation audit (perfectly collinear columns removed, remaining pairs documented) and entropy-based mutual information against the default label.
 
-Phase 2 menemukan 5 segmen lewat K-Means (K=5, dipilih berdasarkan elbow dan silhouette), divalidasi hierarchical clustering (BIRCH lalu Ward, dendrogram 3 linkage). Reduksi dimensi dipisah sesuai algoritma: K-Means dan hierarchical memakai PCA 9 komponen (di bawah 10, dipilih dari titik belok scree), sedangkan DBSCAN dijalankan di embedding UMAP 2D karena ia berbasis kepadatan, dengan eps otomatis dari knee k-distance. Pemetaan nomor cluster ke nama tersimpan di cluster_names.csv karena penomoran bisa berubah antar run.
+Phase 2 finds 5 customer segments with K-Means (K=5, chosen by elbow and silhouette), validates them with Ward hierarchical clustering (agreement 0.55) and dendrograms across three linkage methods, and uses DBSCAN on a UMAP embedding as a density-based noise detector whose isolated points feed the anomaly phase. The id-to-name mapping is stored in `cluster_names.csv` because numbering permutes between runs.
 
-Phase 3 menjalankan Apriori, FP-Growth, dan ECLAT pada seluruh 356.255 transaksi. Ketiganya menemukan 1.204 rules yang persis sama, ditambah 1.236 rules per segmen. Lima belas rule final dipilih (tiga per segmen, saringan redundansi Jaccard), lift 1,84 sampai 4,59, masing-masing dengan interpretasi empat bagian.
+Phase 3 discretizes 7 dimensions by quantile and runs Apriori, FP-Growth, and ECLAT over all 356,255 transactions. The three algorithms find identical rule sets, and 15 final rules survive the lift, confidence, and redundancy filters, three per segment.
 
-Phase 4 mengevaluasi seluruh aplikasi dengan IQR, Z-score, dan Isolation Forest, lalu mencocokkannya dengan noise DBSCAN (ruang UMAP) dari Phase 2. Hasilnya 5.359 anomali high-confidence, semuanya diinvestigasi dengan ID pemohon nyata. Tiap kasus diberi dua label: jenis teori (global 3.766, kontekstual 1.493, kolektif 100) dan tipe bisnis (kesalahan data 3.215, langka tapi sah 2.005, sinyal risiko 139), plus rekomendasi sesuai segmennya. Uji silang terhadap TARGET (yang tidak pernah dipakai saat mining) menunjukkan default naik bertingkat dari 6,88% di kelompok normal sampai 12,92% di anomali kuat.
+Phase 4 scores every application with five detectors: IQR and Z-score (univariate), robust Mahalanobis distance and Isolation Forest (multivariate), and the Phase 2 DBSCAN noise flag (density). A row flagged by three or more is a high-confidence anomaly. Each case gets a theory label (global, contextual, collective), a business label (data error, rare but valid, risk signal), and a segment-specific recommendation, all tied to real applicant IDs.
 
-Phase 5 berupa dashboard Plotly Dash untuk presentasi ke klien bisnis dan tiga laporan markdown di folder reports. Dashboard membaca semua angka dari folder results, jadi run ulang otomatis menyinkronkan tampilannya.
+Phase 5 is the Plotly Dash dashboard for a business audience and the written reports. Every number on the dashboard is read from the result artefacts, so a re-run keeps it in sync. The honesty test is shown up front: segments and anomaly tiers stratify real default rates monotonically even though the label was never used during mining.
 
-## Pemetaan ke kriteria PDF
+## Technical notes
 
-| Phase | Kriteria | Implementasi |
-|---|---|---|
-| 1 | Cleaning, transformasi, seleksi fitur korelasi + entropy, pipeline | Pipeline Prefect 10 step; mutual_info_classif; audit korelasi |
-| 2 | K-Means + DBSCAN + Hierarchical, Elbow + Silhouette, profiling | Semua, plus dendrogram 3 linkage dan artefak pemetaan nama |
-| 3 | Diskretisasi, Apriori, support/confidence/lift, 10+ rules, interpretasi | 15 rules, 3 algoritma saling mengkonfirmasi, interpretasi spesifik |
-| 4 | IQR + Z-score + Isolation Forest, cross-ref Phase 2, tipologi | Semua pada full data; kerangka global/contextual/collective + tipe bisnis A/B/C; investigasi per kasus dengan ID nyata & rekomendasi per segmen |
-| 5 | Dashboard, knowledge report, presentasi | Plotly Dash + 3 laporan manual |
-
-## Catatan teknis
-
-Selalu jalankan dengan PYTHONIOENCODING=utf-8 di Windows agar log tidak error karakter. Hierarchical clustering pada 356 ribu baris tidak mungkin memakai memori kuadratik, jadi dipakai BIRCH untuk meringkas ke 500 micro-centroid lebih dulu; DBSCAN dibatasi sample 50 ribu dengan alasan serupa. Semua random seed bernilai 42, sehingga pengelompokan stabil antar run, tapi nomor urut cluster tidak; selalu baca cluster_names.csv. SK_ID_CURR mengalir dari pipeline sampai investigasi anomali sehingga setiap temuan bisa ditelusuri ke pemohon aslinya.
+Always run with `PYTHONIOENCODING=utf-8` on Windows so the logs do not hit encoding errors. Hierarchical clustering on 356K rows cannot use quadratic memory, so Ward runs on a representative sample and the rest of the data is assigned to the nearest centre; DBSCAN is limited to a 50K sample for a similar reason. All random seeds are 42, so the groupings are stable between runs, but the cluster numbering is not: always read `cluster_names.csv`. `SK_ID_CURR` flows from the pipeline through to the anomaly investigation so every finding can be traced to a real applicant.

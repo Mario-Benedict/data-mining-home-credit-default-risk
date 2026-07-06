@@ -1,41 +1,117 @@
 /* ============================================================
-   Home Credit dashboard — clean white corporate theme.
-   White cards on a whisper-gray canvas, hairline borders,
-   one restrained steel-navy accent, generous whitespace,
-   no gradients, no shadows. A real business-intelligence look.
+   Home Credit dashboard: app-shell layout with a dark left rail.
+   Deep slate sidebar for navigation, light content canvas, white
+   cards with hairline borders, one teal accent for the active
+   nav item. No gradients, no shadows.
    ============================================================ */
 
 :root {
-    --canvas:    #F7F8FA;   /* whisper-gray page */
-    --surface:   #FFFFFF;   /* cards, hero */
-    --surface-2: #F4F6F8;   /* table header / quiet tint */
-    --border:    #E6E8EC;   /* hairline */
-    --ink:       #1F2933;   /* dark slate text */
-    --ink-soft:  #6B7280;   /* secondary gray */
-    --accent:    #34506B;   /* restrained steel navy */
+    --rail:      #1B2A3A;   /* deep slate sidebar */
+    --rail-ink:  #C4CEDA;   /* sidebar text */
+    --rail-dim:  #7E8CA0;   /* sidebar secondary text */
+    --accent:    #2FB79B;   /* teal, active nav + small accents */
+    --canvas:    #F4F6F8;   /* content background */
+    --surface:   #FFFFFF;   /* cards */
+    --surface-2: #F1F4F6;   /* table headers, quiet tints */
+    --border:    #E3E7EC;   /* hairline */
+    --ink:       #1F2933;   /* main text */
+    --ink-soft:  #6B7280;   /* secondary text */
 }
+
+* { box-sizing: border-box; }
 
 body {
     font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
     margin: 0;
-    padding: 0 0 48px 0;
     background: var(--canvas);
     color: var(--ink);
     -webkit-font-smoothing: antialiased;
 }
 
-/* Header: plain white, hairline underline, no banner colour */
-.hero {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 34px 48px 28px 48px;
+/* ---- App shell -------------------------------------------------- */
+.shell {
+    display: flex;
+    min-height: 100vh;
+    align-items: stretch;
 }
-.hero h1 {
-    margin: 0 0 9px 0;
-    font-size: 23px;
+
+/* ---- Sidebar ----------------------------------------------------- */
+.sidebar {
+    width: 264px;
+    flex-shrink: 0;
+    background: var(--rail);
+    color: var(--rail-ink);
+    padding: 28px 18px 22px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+}
+
+.brand-kicker {
+    font-size: 11px;
+    letter-spacing: 2.5px;
+    color: var(--accent);
+    font-weight: 700;
+}
+.brand-title {
+    font-size: 19px;
+    font-weight: 650;
+    color: #FFFFFF;
+    margin: 4px 0 8px 0;
+}
+.brand-sub {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--rail-dim);
+}
+
+/* Navigation: radio inputs hidden, labels styled as nav rows */
+.nav { display: flex; flex-direction: column; gap: 4px; }
+.nav-input { position: absolute; opacity: 0; pointer-events: none; }
+.nav-item {
+    display: block;
+    padding: 10px 13px;
+    border-radius: 9px;
+    font-size: 13.5px;
+    color: var(--rail-ink);
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background 120ms ease;
+}
+.nav-item:hover { background: rgba(255, 255, 255, 0.06); }
+.nav label:has(input:checked) {
+    background: rgba(47, 183, 155, 0.14);
+    color: #FFFFFF;
+    border-left: 3px solid var(--accent);
     font-weight: 600;
+}
+
+.side-note {
+    margin-top: auto;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--rail-dim);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 14px;
+}
+
+/* ---- Main column -------------------------------------------------- */
+.main {
+    flex: 1;
+    min-width: 0;
+    padding: 26px 34px 46px 34px;
+}
+
+.page-head h1 {
+    margin: 0 0 8px 0;
+    font-size: 22px;
+    font-weight: 650;
     letter-spacing: -0.2px;
-    color: var(--ink);
 }
 .hero-sub {
     margin: 0;
@@ -45,72 +121,56 @@ body {
     color: var(--ink-soft);
 }
 
-/* KPI cards: white, thin top accent rule, no shadow */
+/* KPI strip */
 .kpi-row {
     display: flex;
-    gap: 16px;
+    gap: 14px;
     flex-wrap: wrap;
-    margin: 24px 48px 22px 48px;
+    margin: 20px 0 6px 0;
 }
 .kpi-card {
     flex: 1;
-    min-width: 178px;
+    min-width: 172px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px 18px;
+    border-radius: 12px;
+    padding: 15px 18px;
 }
-.kpi-title { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.5px; }
-.kpi-value { font-size: 27px; font-weight: 650; color: var(--ink); margin: 5px 0 2px; }
+.kpi-title { font-size: 11px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.6px; }
+.kpi-value { font-size: 26px; font-weight: 650; color: var(--ink); margin: 5px 0 2px; }
 .kpi-sub   { font-size: 11.5px; color: var(--ink-soft); }
-
-/* Tabs: quiet text, active gets the accent underline */
-.tabs { margin: 0 48px; }
-.tabs .tab {
-    font-size: 13.5px !important;
-    font-weight: 500;
-    color: var(--ink-soft) !important;
-    border: none !important;
-    background: transparent !important;
-    padding: 13px 18px !important;
-}
-.tabs .tab--selected {
-    color: var(--accent) !important;
-    font-weight: 600;
-    border-bottom: 2px solid var(--accent) !important;
-}
 
 /* Content cards */
 .row {
     display: flex;
-    gap: 18px;
+    gap: 16px;
     flex-wrap: wrap;
-    margin: 18px 48px;
+    margin: 16px 0;
     align-items: flex-start;
 }
-.row > .card { flex: 1; min-width: 460px; margin: 0; }
+.row > .card { flex: 1; min-width: 440px; margin: 0; }
 .card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 20px 24px;
-    margin: 18px 48px;
+    margin: 16px 0;
 }
 .card h3 { margin: 2px 0 8px 0; font-size: 15px; font-weight: 600; color: var(--ink); }
 
-/* Insight callouts: plain white, thin left accent rule */
+/* Insight callouts */
 .insight-row {
     display: flex;
-    gap: 18px;
+    gap: 16px;
     flex-wrap: wrap;
-    margin: 22px 48px 0 48px;
+    margin: 18px 0 0 0;
 }
 .insight-box {
     flex: 1;
-    min-width: 300px;
+    min-width: 290px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 17px 20px;
 }
 .insight-title { font-weight: 600; font-size: 13.5px; margin-bottom: 7px; color: var(--ink); }
@@ -127,10 +187,10 @@ body {
 /* Plain-language segment description */
 .segment-desc {
     margin: 12px 2px 6px 2px;
-    padding: 13px 17px;
+    padding: 14px 17px;
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 10px;
     font-size: 13px;
     line-height: 1.6;
     color: var(--ink);
@@ -138,8 +198,23 @@ body {
 }
 
 footer {
-    margin: 30px 48px 0 48px;
+    margin: 28px 0 0 0;
     font-size: 11.5px;
     color: var(--ink-soft);
-    line-height: 1.55;
+}
+
+/* ---- Narrow screens: rail collapses into a top bar ---------------- */
+@media (max-width: 920px) {
+    .shell { flex-direction: column; }
+    .sidebar {
+        width: 100%;
+        height: auto;
+        position: static;
+        padding: 18px;
+        gap: 12px;
+    }
+    .nav { flex-direction: row; flex-wrap: wrap; }
+    .side-note { display: none; }
+    .main { padding: 18px; }
+    .row > .card { min-width: 100%; }
 }

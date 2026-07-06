@@ -1,79 +1,28 @@
-# Knowledge Discovery Report: Home Credit Default Risk
+# Knowledge Discovery Report: Executive Brief
 
-Laporan Phase 5 untuk pembaca non-teknis.
-Data yang diolah: 356.255 aplikasi kredit (seluruh data train dan test, digabung karena prosesnya unsupervised) ditambah lima tabel perilaku historis, yang terbesar berisi 27 juta baris.
+A business-facing summary of what the analysis found in 356,255 Home Credit applications. The full narrative, step by step, is in the project-root `REPORT.md`; this brief is the short version for a decision-maker.
 
-## Pertanyaan yang harus dijawab
+One rule shaped everything: the default label was never shown to any algorithm. Segments, rules, and anomalies were all found without it, then tested against the defaults that actually happened. Everything below passed that test.
 
-Apa yang kami temukan yang tidak terlihat dari data mentah?
+## The three findings
 
-Data mentah Home Credit memberitahu siapa pemohonnya dan berapa pinjamannya. Setelah lima fase KDD, kami menemukan tiga hal yang tidak mungkin terlihat dari tabulasi biasa. Ketiganya kemudian diuji terhadap default yang benar-benar terjadi, dan lolos, padahal label default sama sekali tidak dipakai selama proses penemuan.
+**The biggest borrowers are the safest.** When we grouped customers by their financial behaviour, five distinct profiles emerged. The group that borrows the most relative to income, about 35 percent of the portfolio, turns out to default the least: 6.1 percent against the 8.1 percent portfolio average. Risk does not live in the loan amount. It lives in the repayment trail and the card behaviour, information scattered across five relational tables that only becomes visible after you bring it together.
 
-## Temuan 1: nasabah terbagi alami menjadi lima "kepribadian kredit", dan pembedanya perilaku, bukan demografi
+**One percent of customers carries the densest risk, and their behaviour has a clear fingerprint.** The Troubled Borrower group is 1 percent of the book but defaults at 11.8 percent, with repayment delays many times the norm across every product type. Their behaviour is so consistent that one of the patterns found in their data holds with 99 percent reliability, which makes it directly usable as an early-warning filter in the lending process.
 
-Tanpa diberi tahu apa pun soal gagal bayar, algoritma clustering menemukan lima kelompok:
+**The more unusual an application looks, the more likely it is to default.** Every application was scored by five independent detectors, two that look at individual figures and three that look at the whole financial picture at once. The more detectors agree that an application is unusual, the higher the actual default rate turns out to be: 6.9 percent when none flag, 8.5 percent at one, 11.7 percent at two, 13.0 percent at three or more. The 141 applications classified as genuine risk signals default at 16.8 percent, more than twice the portfolio average. None of these detectors ever saw the default label.
 
-| Segmen | Ukuran | Ciri yang paling membedakan | Default aktual |
-|--------|--------|------------------------------|----------------|
-| Peminjam Minimal | 35,6% | Kredit kecil, tenor pendek, beban rendah (nilai kredit 84% di bawah rata-rata) | 8,35% |
-| Peminjam Ambisius | 35,0% | Kredit besar relatif terhadap pendapatan, umumnya peminjam baru | 6,16% |
-| Veteran Aktif | 13,1% | Riwayat aplikasi sangat padat, sering ditolak | 9,24% |
-| Peminjam Bermasalah | 1,0% | Keterlambatan bayar ekstrem di semua produk | 11,43% |
-| Pengguna CC Intensif | 15,2% | Utilisasi kartu kredit dua sampai tiga kali rata-rata | 10,79% |
+## What we recommend
 
-Baseline default populasi adalah 8,07%.
+| Team | Action | Grounding |
+|------|--------|-----------|
+| Credit officers | Manual review for the 141 risk-signal cases; watch the low-income-paired-with-large-loan pattern closely | Findings 2 and 3 |
+| Risk team | Add the anomaly agreement score and customer segment as inputs to the credit scoring process | The consistent staircase in Finding 3 |
+| Operations | Verify data on the 4,429 cases where a figure looks like a recording mistake before making a decision | Finding 3 |
+| Product team | Micro-credit plus financial education for senior Minimal Borrowers; priority routing for the 3,070 rare-but-genuine cases | Findings 1 and 2 |
+| Growth team | Shift mortgage and vehicle-loan growth toward the Ambitious segment, protected by an income stress test | Finding 1 |
+| Collections | Prioritise monitoring of Troubled Borrowers and Intensive Card Users, who default at 10.8 to 11.8 percent | Finding 1 |
 
-Bagian yang menarik, dan sejujurnya agak mengejutkan kami: segmen Ambisius, yang meminjam paling besar relatif terhadap pendapatannya, justru paling jarang gagal bayar. Sementara dua segmen dengan default tertinggi sama-sama dikenali dari jejak perilakunya: riwayat telat bayar (Bermasalah) dan ketergantungan pada kartu kredit (CC Intensif). Pesannya untuk kebijakan kredit cukup gamblang. Besarnya pinjaman bukan sinyal bahaya. Jejak perilaku masa lalu, yang tersebar di lima tabel terpisah dan baru kelihatan setelah digabungkan, itulah sinyalnya.
+## Where to look
 
-## Temuan 2: tiap segmen punya sidik jari yang konsisten di tiga algoritma berbeda
-
-Kami menjalankan tiga algoritma pencari pola (Apriori, FP-Growth, ECLAT) atas data yang sama. Ketiganya bekerja dengan cara yang sangat berbeda, dan ketiganya menemukan 1.204 aturan yang persis sama. Itu cara kami memastikan pola yang dilaporkan memang ada di data, bukan keanehan satu metode.
-
-Dari 1.204 itu, 15 aturan terkuat dipilih. Tiga contoh yang paling berguna:
-
-Pertama, pemohon senior di segmen Minimal yang beban cicilannya berat hampir selalu berpendapatan rendah dengan kredit kecil (terjadi 4,6 kali lebih sering daripada kebetulan, akurat 89,7%). Ada sub-populasi pensiunan yang pinjamannya kecil tapi terasa berat bagi kantong mereka. Mereka kandidat program micro-credit dengan pendampingan, bukan kandidat penolakan.
-
-Kedua, kredit kecil yang bebannya berat hampir pasti berarti pendapatan rendah (akurat 98,3%, mencakup 10,6% seluruh aplikasi). Nominal kecil sering dianggap otomatis aman. Data bilang sebaliknya: kalau pendapatannya juga kecil, pinjaman kecil pun berat.
-
-Ketiga, pendapatan sangat tinggi di segmen Ambisius dengan beban tinggi hampir selalu berarti kredit besar. Kredit besar terkonsentrasi pada orang yang mampu menanggungnya, konsisten dengan Temuan 1.
-
-Satu hal lagi yang layak dicatat: segmen Bermasalah punya aturan internal dengan akurasi 99,1%. Artinya perilaku gagal bayar kronis punya pola demografis-finansial yang sangat konsisten, dan pola itu bisa dipasang sebagai aturan deteksi dini di sistem underwriting.
-
-## Temuan 3: "keanehan" statistik ternyata sinyal risiko yang berjenjang
-
-Kami menjalankan tiga metode deteksi anomali (IQR, Z-score, Isolation Forest) plus pengecekan silang DBSCAN ke seluruh 356.255 aplikasi, lalu menghitung berapa metode yang sepakat untuk tiap aplikasi. Setelah selesai, kami baru membuka label default dan mengukur:
-
-| Berapa metode yang sepakat | Default aktual |
-|----------------------------|----------------|
-| Tidak ada (normal) | 7,25% |
-| Satu metode | 8,12% |
-| Dua metode | 9,38% |
-| Tiga atau empat metode (10.911 aplikasi) | 11,17% |
-
-Tangganya naik terus tanpa pengecualian. Makin banyak metode yang menganggap sebuah aplikasi aneh, makin besar kemungkinan ia benar-benar gagal bayar. Padahal tidak satu pun metode itu pernah melihat label default.
-
-Ke-10.911 anomali teratas kami investigasi satu per satu, dengan ID pemohon nyata, dan terbagi tiga jenis yang masing-masing butuh perlakuan berbeda:
-
-6.084 kasus adalah kesalahan data: nilainya menyimpang lebih dari 50 kali median kelompoknya, hampir pasti salah input atau salah satuan. Tindak lanjutnya di tim data engineering, berupa validasi otomatis saat data masuk.
-
-4.617 kasus ekstrem tapi masuk akal: nasabah dengan profil langka yang sah, sebagian berpotensi nasabah kelas atas. Menolak mereka otomatis berarti kehilangan bisnis; lebih tepat dialihkan ke layanan prioritas.
-
-210 kasus adalah sinyal risiko murni: kombinasi finansial yang saling bertentangan, misalnya pendapatan rendah dengan kredit besar. Default aktual kelompok ini 13,47%, hampir 1,7 kali baseline. Untuk mereka, auto-approve sebaiknya dimatikan dan review manual diwajibkan.
-
-## Jadi, apa yang tidak terlihat dari data mentah?
-
-Tiga hal. Risiko itu soal perilaku, bukan nominal; peminjam terbesar justru yang paling aman, dan pembeda risiko sejati tersembunyi di riwayat pembayaran yang tersebar di lima tabel. Satu persen populasi menyumbang konsentrasi risiko tertinggi dan punya pola yang bisa dideteksi dini dengan akurasi di atas 99%. Dan derajat "keanehan" multivariat sebuah aplikasi adalah dimensi risiko tersendiri yang berjenjang rapi terhadap default nyata, layak dijadikan masukan tambahan di samping skor kredit konvensional.
-
-## Rekomendasi operasional
-
-| Tim | Tindakan | Dasar |
-|-----|----------|-------|
-| Underwriting | Review manual wajib untuk 210 kasus Risk Signal; waspadai pola pendapatan rendah dengan kredit besar | Temuan 2 dan 3 |
-| Risk engine | Tambahkan skor anomali dan keanggotaan segmen sebagai fitur scoring | Temuan 3 |
-| Data engineering | Pasang validasi saat ingest untuk 6.084 pola kesalahan data | Temuan 3 |
-| Produk | Micro-credit plus literasi keuangan untuk segmen Minimal senior; layanan prioritas untuk kasus langka yang sah | Temuan 1 dan 2 |
-| Collection | Prioritaskan pemantauan segmen Bermasalah dan CC Intensif | Temuan 1 |
-
-## Menjelajah hasil
-
-Dashboard interaktif: jalankan `python dashboard/app.py` lalu buka http://127.0.0.1:8050. Detail teknis per fase ada di results/phase1 sampai phase4 (business report, interpretasi rule, log investigasi anomali). Audit proses lengkap ada di reports/validation_report.md.
+The interactive dashboard walks through every finding with plain-language explanations: the initial data condition, the customer segments with per-segment recommendations, the 15 behaviour rules as readable sentences, and the full list of flagged cases with real applicant IDs. The full written report is `REPORT.md` at the project root; the reasoning behind every methodological choice is in `reports/reasoning_validation.md`; the audit trail with all verified figures is in `reports/validation_report.md`.
