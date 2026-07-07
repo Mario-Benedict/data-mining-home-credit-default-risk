@@ -50,7 +50,7 @@ The full preparation runs as a ten-step pipeline, and the output is one clean, s
 
 ### Reducing to a workable space
 
-K-Means and hierarchical grouping both work on distance, which loses its meaning in 47 dimensions. So they run on a compressed version of the data that keeps nine components, capturing nearly all the useful variation while staying compact. The number is not arbitrary: a scree chart shows a clear drop-off after the ninth component, so the tenth and beyond add very little.
+K-Means and hierarchical grouping both work on distance, which loses its meaning in 47 dimensions. So they run on a compressed version of the data that keeps ten components, the practical ceiling for a distance-based method, capturing over half the useful variation while staying compact enough that Euclidean distance still means something. The number is not arbitrary: a scree chart shows each further component adding only a sliver of variance by that point, so an eleventh would buy almost nothing.
 
 The density-based method (DBSCAN) is handled differently. Distance-based compression flattens tight groups, so DBSCAN on that space tends to see one undifferentiated mass. Instead it runs on a two-dimensional layout that preserves the local neighbourhood structure of the data, so tight groups stay tight and genuinely isolated applicants get pushed to the edge. Its radius is chosen automatically from the data itself.
 
@@ -67,7 +67,7 @@ The grouping is driven by financial behaviour, not demographics. The strongest d
 | Minimal Borrower | about 36% | small loans, short terms, light repayment burden | 8.4% |
 | Ambitious Borrower | about 35% | large loans relative to income, usually newer borrowers | 6.1% |
 | Active Veteran | about 13% | a dense history of applications, often rejected | 9.2% |
-| Troubled Borrower | about 1% | severe repayment delays across every product | 11.8% |
+| Troubled Borrower | about 1% | severe repayment delays across every product | 11.4% |
 | Intensive Card User | about 15% | card usage two to three times the average | 10.8% |
 
 The portfolio default rate is 8.1 percent.
@@ -102,29 +102,29 @@ One rule deserves particular attention: the Troubled segment has an internal pat
 
 ## Anomaly detection and investigation
 
-### Five detectors, because unusual is not one concept
+### Six detectors, because unusual is not one concept
 
-Every application is scored by five signals that each define "unusual" differently. Two read one column at a time: one is the robust view that handles the heavy tails typical of financial data, and one is the more sensitive complement. Both are openly blind to combinations, which is why three additional signals join them.
+Every application is scored by six signals that each define "unusual" differently. Two read one column at a time: the robust view uses a skew-adjusted boxplot fence (Hubert and Vandervieren, 2008) rather than a flat multiplier, because income, credit amount, and annuity are right-skewed by construction and a symmetric fence would either punish the legitimate high tail or ignore a genuinely wrong low value. Its fence multiplier is calibrated separately for every column, by searching for the value that makes each column flag close to a fixed 1 percent of its own applicants, rather than reusing one textbook constant everywhere; a fixed search boundary was not always wide enough (a column whose typical values sit within a hair of the median, with a long thin tail beyond, needs a far larger multiplier), so the search expands its own boundary until it is demonstrably sufficient. It also runs only on genuinely continuous columns, and it abstains on any column whose middle 50 percent collapses onto one shared value, such as zero card utilisation for applicants with no card, rather than flagging every ordinary customer who differs from that shared value. This mattered in practice: an earlier, unguarded version of this check, using one flat multiplier for every column, flagged 56.5 percent of the portfolio; restricting it to continuous columns and calibrating the fence per column brought it to 0.4 percent, in line with the rest of the ensemble. The sensitive complement (Z-score) is kept deliberately unadjusted for skew as a naive baseline, calibrated to the same 1 percent target rate, and comparing the two is itself part of the evidence for why the skew adjustment is needed. Both single-column checks are openly blind to combinations, which is why four additional signals join them.
 
-One signal is combination-aware: it measures how far a row sits from the bulk along the natural correlations of the data, so it catches an applicant whose income and loan amount are each ordinary but wrong together. An important calibration note: the standard textbook threshold for this signal would flag a third of the entire portfolio, which is a sign that the data does not follow a perfect bell curve rather than a sign that a third of applicants are unusual. The notebook demonstrates that failure, then uses the top 2.5 percent of scores instead, keeping the flag rate in the same range as the other signals.
+One signal is combination-aware (Mahalanobis distance): it measures how far a row sits from the bulk along the natural correlations of the data, so it catches an applicant whose income and loan amount are each ordinary but wrong together. An important calibration note: the standard textbook threshold for this signal would flag a third of the entire portfolio, which is a sign that the data does not follow a perfect bell curve rather than a sign that a third of applicants are unusual. The notebook demonstrates that failure, then uses the top 2.5 percent of scores instead, keeping the flag rate in the same range as the other signals.
 
-A fourth signal uses random partitioning to isolate easy-to-separate rows quickly, with no assumption about the shape of the data, catching non-linear pockets that no single threshold can describe. The fifth is an independent density-based check from the segmentation step, computed with different machinery in a different part of the process.
+A fourth signal (Isolation Forest) uses random partitioning to isolate easy-to-separate rows quickly, with no assumption about the shape of the data, catching non-linear pockets that no single threshold can describe. A fifth (Local Outlier Factor) asks whether an applicant's neighbourhood is sparser than its neighbours' own neighbourhoods, a local, relative comparison rather than one fixed density rule for the whole portfolio, also calibrated at the top 2.5 percent of scores. The sixth is an independent density-based check from the segmentation step (DBSCAN), which applies one fixed density rule to the whole portfolio and is computed with different machinery in a different part of the process; paired with the local, relative view of the fifth signal, the two density checks cover both a global and a local notion of "too sparse to belong."
 
-A record flagged by three or more of the five is a high-confidence anomaly. There are 7,640 of them, which is 2.1 percent of the portfolio.
+A record flagged by three or more of the six is a high-confidence anomaly. There are 2,404 of them, which is 0.7 percent of the portfolio.
 
-### Two labels per anomaly: what kind, and what to do
+### Two labels per anomaly: what kind, and what to do (and why the first type is not called an outlier)
 
-A flat list of unusual cases is not actionable, so each high-confidence case gets two labels.
+A flat list of unusual cases is not actionable, so each high-confidence case gets two labels, and the two labels answer two different questions on purpose.
 
-The first classifies the type of deviation. A global anomaly is extreme against the whole population, often a data entry issue or a genuinely rare customer. There are 5,052 of these. A contextual anomaly looks fine in general but stands out sharply within its own customer group, like heavy card use in the Minimal segment. There are 2,486 of these, and they are the most valuable to investigate as risk signals. A collective anomaly is part of a small group of customers who together sit apart from the main population. There are 102, watched as a recurring pattern rather than a one-off.
+The first classifies how the case deviates statistically. A global anomaly is extreme against the whole population. There are 2,013 of these. A contextual anomaly looks fine in general but stands out sharply within its own customer group, like heavy card use in the Minimal segment. There are 354 of these, and they are the most valuable to investigate as risk signals. A collective anomaly is part of a small group of customers who together sit apart from the main population. There are 37, watched as a recurring pattern rather than a one-off.
 
-The second label decides the business response. Data entry anomalies (4,429 cases): a figure is so extreme it almost certainly reflects a recording mistake; the application should be verified before a decision is made. Rare but valid cases (3,070 cases): extreme yet internally consistent, routed to appropriate handling rather than rejected. Risk signals (141 cases): a contradictory financial combination such as low income paired with a large loan, requiring manual credit review. This small group defaults at 16.8 percent, more than twice the portfolio average. Every case carries a real applicant ID so the operations team can follow up directly.
+The second label says what the deviation most likely means in business terms, and this is where the case is never described as an outlier if the honest reading is a data problem. Data quality issues (1,616 cases): a figure deviates by more than 50 times its segment's typical value, a magnitude no real customer's finances produce; the far more honest reading is a recording mistake, a unit mismatch, or an unhandled placeholder value, so the record is routed to data verification rather than treated as a risk finding. Rare but valid cases (671 cases): extreme yet internally consistent, a genuine if uncommon profile, routed to appropriate handling rather than rejected. Risk signals (117 cases): a contradictory financial combination such as low income paired with a large loan, requiring manual credit review. Every case carries a real applicant ID, and the business impact and recommendation attached to each one are a short, one-line summary generated from that record's own data, not from a fixed template, so the operations team can see at a glance what actually makes that specific application unusual.
 
 ---
 
 ## The dashboard
 
-The dashboard presents all of this for a business reader. It reads every number from the result files, so re-running the analysis keeps it in sync, and all technical column names are translated into plain language throughout. A sidebar navigates six sections: the executive summary, the initial data condition, the segments with per-segment recommendations, the behaviour rules, the anomalies with the five-detector comparison, and the methodology.
+The dashboard presents all of this for a business reader. It reads every number from the result files, so re-running the analysis keeps it in sync, and all technical column names are translated into plain language throughout. The header and headline numbers change with the section being viewed, so what is shown always matches what that section is about. A sidebar navigates six sections: the executive summary, the initial data condition, the segments with per-segment recommendations, the behaviour rules, the anomalies with the six-detector comparison, and the methodology.
 
 ---
 
@@ -132,9 +132,9 @@ The dashboard presents all of this for a business reader. It reads every number 
 
 This is the honesty test for the whole study. The segments and anomalies were built without the default label. Only afterwards did we open the real outcomes and measure them. If the grouping were arbitrary, every group would default near the 8.1 percent average. Instead the numbers spread out cleanly and rise in order.
 
-By segment: Ambitious 6.1 percent, Minimal 8.4 percent, Active Veteran 9.2 percent, Intensive Card User 10.8 percent, Troubled 11.8 percent.
+By segment: Ambitious 6.1 percent, Minimal 8.5 percent, Active Veteran 9.2 percent, Intensive Card User 10.8 percent, Troubled 11.4 percent.
 
-By anomaly level, the default rate climbs without a single exception: normal 6.9 percent, weak signal 8.5 percent, moderate 11.7 percent, high confidence 13.0 percent. The risk-signal subset inside the high tier defaults at 16.8 percent, more than twice the baseline.
+By anomaly level, the default rate climbs without a single exception from untouched applications through every tier that carries a signal: normal 7.7 percent, weak signal 11.3 percent, moderate 12.9 percent, high confidence 13.6 percent. One number is reported honestly rather than folded into a tidy story: among the three business types, risk signal (12.3 percent) does not come out highest, rare but valid (14.2 percent) does, though the risk-signal group is only 106 applicants with a known outcome, too small a sample to draw a reliable ranking from. What holds cleanly is the comparison that matters most: every tier and every business type defaults well above the 8.1 percent baseline, and the tier gradient climbs in strict order.
 
 A clean, consistent gradient from methods that never saw the label is strong evidence that the structure is real, not a statistical accident.
 

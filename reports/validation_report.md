@@ -16,8 +16,10 @@ The project went through several audit rounds. Two critical defects and several 
 | 5 | Small ordered columns escaped the standardization step because the check only looked at the data type, silently over-weighting them | Latent bug | Fixed; detection now checks the actual range of values |
 | 6 | Hierarchical grouping had collapsed 94 percent of rows into one group (agreement with K-Means was 0.02) | Methodological | Replaced with Ward linkage on a representative sample; agreement now 0.55 |
 | 7 | Density-based grouping in the compressed space saw one undifferentiated mass | Methodological | Moved to a layout that preserves local neighbourhood structure, with an automatically chosen radius |
-| 8 | Anomaly detection relied only on per-column signals plus one combination-aware signal | Methodological | Added a robust combination-aware signal; five signals total |
+| 8 | Anomaly detection relied only on per-column signals plus one combination-aware signal | Methodological | Added a robust combination-aware signal, then a local density-ratio signal (Local Outlier Factor); six signals total |
 | 9 | The standard threshold for the combination-aware signal flagged a third of the portfolio | Calibration | Demonstrated clearly in the notebook, then set empirically at the top 2.5 percent of scores |
+| 10 | A flat 1.5x IQR fence, applied to every numeric column including binary flags and zero-inflated fields, flagged 201,278 rows (56.5 percent of the portfolio), an order of magnitude more than any other signal | Methodological | Replaced with a skew-adjusted boxplot rule (Hubert and Vandervieren, 2008) restricted to genuinely continuous columns, with the fence multiplier calibrated per column, not a shared constant, to a fixed 1 percent target flag rate; a further guard abstains on any column whose middle 50 percent collapses onto one shared value (no credit card, no bureau record, an imputed missing-score placeholder). IQR flags fell to 1,251, in line with the rest of the ensemble |
+| 11 | The per-column calibration search used a fixed upper bound, which silently under-widened the fence for columns with a tiny interquartile range relative to their tail (a payment ratio parked within a hair of its median for most applicants, with a long thin tail beyond it), leaving those columns flagging 10x the intended rate | Latent bug | Fixed by expanding the search bound until it is demonstrably wide enough, and by returning the boundary that never exceeds the target rate rather than a midpoint that could still overshoot on a quantised column |
 
 ## Data preparation, verified
 
@@ -36,12 +38,12 @@ The category encoding is the most consequential decision: education as an ordere
 
 | Check | Result |
 |-------|--------|
-| Compression | 9 components, chosen at the point where adding more stops helping |
+| Compression | 10 components, the practical ceiling for a distance-based method on this data |
 | Number of groups | Elbow chart points to 5; score confirms 5 is best among the usable options |
 | K-Means | Full 356,255 applicants, five segments |
 | Hierarchical (Ward) | Agreement with K-Means 0.55, a genuine independent confirmation |
 | Density-based | Neighbourhood layout, automatically chosen radius, 30 dense pockets, 1,085 isolated cases passed to anomaly review |
-| Segments | Minimal Borrower 35.4%, Ambitious Borrower 35.1%, Active Veteran 13.2%, Intensive Card User 15.2%, Troubled Borrower 1.1% |
+| Segments | Minimal Borrower 35.5%, Ambitious Borrower 35.1%, Active Veteran 13.2%, Intensive Card User 15.2%, Troubled Borrower 1.0% |
 
 Group numbering shifts between runs, so the name mapping is saved to a shared file and every downstream step reads from it.
 
@@ -55,21 +57,22 @@ Group numbering shifts between runs, so the name mapping is saved to a shared fi
 
 ## Anomaly detection, verified
 
-Five detection signals run per application:
+Six detection signals run per application:
 
 | Signal | What it detects | Cases flagged | Note |
 |--------|----------------|---------------|------|
-| Per-column robust check | Single-figure extremes, robust to heavy tails | 201,278 | Intentionally broad; tightened by the agreement requirement |
-| Per-column sensitive check | Single-figure extremes, more sensitive | 8,822 | Complement to the robust check |
-| Combination-aware check (robust) | Unusual combinations of otherwise normal values | 8,907 | Threshold set at top 2.5 percent after the standard threshold was shown to flag a third of the portfolio |
-| Random partitioning check | Non-linear unusual patterns | 17,813 | No distribution assumption |
-| Density-based check | Cases sitting in no dense region of the customer map | 1,085 | Independent cross-check from the segmentation step |
+| Per-column robust check (skew-adjusted IQR) | Single-figure extremes, judged against each column's own, correctly skewed sense of normal | 1,251 | Restricted to genuinely continuous columns, with fences that stretch and tighten by the medcouple and a multiplier calibrated per column to a 1 percent target flag rate, not a shared constant; a zero-width box (a mass point covering more than half the applicants, such as no card or no bureau record) abstains rather than flagging every ordinary customer who differs from it |
+| Per-column sensitive check (Z-score) | Single-figure extremes, more sensitive | 5,815 | Naive baseline, deliberately left symmetry-assuming, calibrated to the same 1 percent target rate as a fair contrast to the adjusted IQR |
+| Combination-aware check (robust Mahalanobis) | Unusual combinations of otherwise normal values | 8,907 | Threshold set at top 2.5 percent after the standard threshold was shown to flag a third of the portfolio |
+| Random partitioning check (Isolation Forest) | Non-linear unusual patterns | 17,813 | No distribution assumption |
+| Local density-ratio check (Local Outlier Factor) | An applicant whose neighbourhood is sparser than its neighbours' own | 8,907 | Threshold also set at top 2.5 percent, fitted in novelty mode on a 20,000-row sample of the same continuous columns as Mahalanobis |
+| Density-based check (DBSCAN) | Cases sitting in no dense region of the customer map | 1,085 | Independent cross-check from the segmentation step |
 
 | Check | Result |
 |-------|--------|
-| High-confidence cases (3 or more signals agree) | 7,640 (2.1 percent of the portfolio), every one reviewed with a real applicant ID |
-| Type of deviation | Global 5,052, Contextual 2,486, Collective 102 |
-| Business classification | Data entry anomaly 4,429; Rare but genuine 3,070; Risk signal 141 |
+| High-confidence cases (3 or more signals agree) | 2,404 (0.7 percent of the portfolio), every one reviewed with a real applicant ID |
+| Type of deviation | Global 2,013, Contextual 354, Collective 37 |
+| Business classification | Data quality issue 1,616; Rare but valid 671; Risk signal 117 |
 
 ## The honesty test: validation against real outcomes
 
@@ -78,18 +81,20 @@ The default label was never used during any of the analysis. It was opened only 
 | Discovered structure | Actual default rate |
 |----------------------|---------------------|
 | Portfolio average | 8.07% |
-| Ambitious Borrower | 6.07% |
-| Minimal Borrower | 8.42% |
-| Active Veteran | 9.24% |
+| Ambitious Borrower | 6.08% |
+| Minimal Borrower | 8.45% |
+| Active Veteran | 9.19% |
 | Intensive Card User | 10.79% |
-| Troubled Borrower | 11.82% |
-| Anomaly level: none flagged | 6.88% |
-| Anomaly level: one signal | 8.53% |
-| Anomaly level: two signals | 11.69% |
-| Anomaly level: three or more signals | 13.02% |
-| Risk-signal cases | 16.79% |
+| Troubled Borrower | 11.37% |
+| Anomaly level: none flagged | 7.71% |
+| Anomaly level: one signal | 11.29% |
+| Anomaly level: two signals | 12.89% |
+| Anomaly level: three or more signals | 13.62% |
+| Business type: data quality issue | 13.46% |
+| Business type: rare but valid | 14.24% |
+| Business type: risk signal | 12.26% |
 
-The default rate rises at every step without a single exception, and the staircase became steeper after the combination-aware signal was added and properly calibrated. For methods that never saw the label, this is strong evidence that the structure found is real.
+The default rate rises without a single exception from the portfolio average through every segment and every anomaly tier, from 7.71 percent for untouched applications to 13.62 percent for the high-confidence tier. One number is reported honestly rather than smoothed into a tidy story: among the three business types, risk signal (12.26%) does not come out highest, rare but valid (14.24%) does, though the risk-signal group is only 106 applicants with a known outcome, so its rate carries a wide margin of error and this ordering should not be read as evidence that risk signals are less dangerous than rare-but-valid cases. What holds cleanly, and is the comparison that actually matters for the business case, is that every anomaly tier and every business type defaults well above the 8.07 percent portfolio baseline, and the tier gradient climbs in strict order with no exceptions. For methods that never saw the label, this remains strong evidence that the structure found is real.
 
 ## Checks that keep the process honest
 

@@ -1,6 +1,6 @@
 cluster_id,nama,slug,profil_risiko,n_applicants
-0,Minimal Borrower,minimal,Low-medium,126140
-1,Active Veteran,veteran,Medium-high,47163
-2,Ambitious Borrower,ambisius,Medium,124939
-3,Intensive Card User,cc_intensif,Medium-high,54238
-4,Troubled Borrower,bermasalah,Very high,3775
+0,Troubled Borrower,bermasalah,Very high,3582
+1,Ambitious Borrower,ambisius,Medium,125071
+2,Active Veteran,veteran,Medium-high,46905
+3,Intensive Card User,cc_intensif,Medium-high,54215
+4,Minimal Borrower,minimal,Low-medium,126482

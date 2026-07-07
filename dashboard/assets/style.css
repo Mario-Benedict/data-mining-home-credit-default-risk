@@ -29,26 +29,29 @@ body {
 }
 
 /* ---- App shell -------------------------------------------------- */
+/* The sidebar is taken out of flow with position:fixed and pinned to the
+   viewport edge; .main is pushed clear of it with margin-left. This is more
+   robust than a flex+sticky sidebar, which can visually detach ("float")
+   when the flex container's height doesn't resolve the way sticky expects. */
 .shell {
-    display: flex;
     min-height: 100vh;
-    align-items: stretch;
 }
 
 /* ---- Sidebar ----------------------------------------------------- */
 .sidebar {
     width: 264px;
-    flex-shrink: 0;
     background: var(--rail);
     color: var(--rail-ink);
     padding: 28px 18px 22px 18px;
     display: flex;
     flex-direction: column;
     gap: 22px;
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
     height: 100vh;
     overflow-y: auto;
+    z-index: 10;
 }
 
 .brand-kicker {
@@ -102,7 +105,7 @@ body {
 
 /* ---- Main column -------------------------------------------------- */
 .main {
-    flex: 1;
+    margin-left: 264px;
     min-width: 0;
     padding: 26px 34px 46px 34px;
 }
@@ -146,9 +149,9 @@ body {
     gap: 16px;
     flex-wrap: wrap;
     margin: 16px 0;
-    align-items: flex-start;
+    align-items: stretch;
 }
-.row > .card { flex: 1; min-width: 440px; margin: 0; }
+.row > .card { flex: 1; min-width: 440px; margin: 0; display: flex; flex-direction: column; }
 .card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -205,7 +208,6 @@ footer {
 
 /* ---- Narrow screens: rail collapses into a top bar ---------------- */
 @media (max-width: 920px) {
-    .shell { flex-direction: column; }
     .sidebar {
         width: 100%;
         height: auto;
@@ -214,7 +216,6 @@ footer {
         gap: 12px;
     }
     .nav { flex-direction: row; flex-wrap: wrap; }
-    .side-note { display: none; }
-    .main { padding: 18px; }
+    .main { margin-left: 0; padding: 18px; }
     .row > .card { min-width: 100%; }
 }
