@@ -1,0 +1,5 @@
+measure,value,business_interpretation
+Combined applications,356255.0,Train + test used for unsupervised pattern discovery
+Labeled train applications,307511.0,Only these rows may enter TARGET evaluation
+Unlabeled test applications,48744.0,Excluded from precision and recall
+Observed train default rate,0.08072881945686496,Payment-difficulty label prevalence; not a population PD

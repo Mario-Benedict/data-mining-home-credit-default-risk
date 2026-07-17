@@ -1,0 +1,24 @@
+Review Type,Driver,records,mean_severity
+Affordability / repayment review,Current product delinquency signal,3293,2.0
+Affordability / repayment review,Material installment delinquency,3123,2.9116234390009605
+Affordability / repayment review,Persistent underpayment,1588,2.0
+Affordability / repayment review,Repeated severe installment lateness,1468,3.0
+Affordability / repayment review,High revolving-credit utilisation,991,2.0
+Affordability / repayment review,High credit-to-income leverage,761,2.559789750328515
+Affordability / repayment review,Frequent installment lateness,671,2.0
+Affordability / repayment review,Repeated prior refusals,597,1.0
+Affordability / repayment review,External delinquency history,583,3.0
+Affordability / repayment review,Weak combined external score,415,2.0
+Affordability / repayment review,High repayment burden,328,2.3963414634146343
+Affordability / repayment review,High external debt utilisation,211,2.0
+Data consistency check,Installment ratio needs reconciliation,64,2.0
+Rare but plausible profile,Unusual BUREAU_COUNT,6,1.0
+Rare but plausible profile,Unusual INST_COUNT,5,1.0
+Rare but plausible profile,Unusual AMT_ANNUITY,2,1.0
+Rare but plausible profile,Unusual ANNUITY_TO_INCOME,2,1.0
+Rare but plausible profile,Unusual INST_PAYMENT_RATIO_MEAN,2,1.0
+Rare but plausible profile,Unusual AMT_CREDIT,1,1.0
+Rare but plausible profile,Unusual BUREAU_DEBT_TO_CREDIT_RATIO,1,1.0
+Rare but plausible profile,Unusual CC_UTILIZATION_MAX,1,1.0
+Rare but plausible profile,Unusual CREDIT_TERM_MONTHS,1,1.0
+Rare but plausible profile,Unusual CREDIT_TO_INCOME,1,1.0

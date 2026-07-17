@@ -5,9 +5,12 @@ Single entry-point. Run from the project root:
 
     python src/run_pipeline.py
 
-Output: datasets/final/features_clustering.csv
-  Fully numeric, StandardScaler-normalized, one row per applicant.
-  Ready for Phase 2 (K-Means, DBSCAN, Hierarchical clustering).
+Outputs:
+  datasets/final/features_business.csv
+    Unscaled values for business interpretation, rules, and record-level review.
+  datasets/final/features_clustering.csv
+    Fully numeric, StandardScaler-normalized values for K-Means, DBSCAN, and
+    hierarchical clustering.
 
 Pipeline steps:
     1  load              - read all CSV files
@@ -18,7 +21,7 @@ Pipeline steps:
     6  outliers          - winsorize / cap / bin social-circle delinquency
     7  engineer          - derived ratios, log transforms, drop redundant cols
     8  encode            - binary / ordinal / frequency encode remaining categoricals (no OHE)
-    9  scale             - feature selection + StandardScaler -> features_clustering.csv
+    9  scale             - business-value export + StandardScaler mining matrix
    10  feature_selection - correlation + entropy (MI) check -> feature_importance.csv, high_corr_pairs.csv
 """
 import os
@@ -113,30 +116,60 @@ def t10_feature_selection():
 
 @flow(name="kdd-phase1-preprocessing")
 def main() -> None:
+    """Run the pipeline through Prefect when orchestration is explicitly requested."""
+    _run_steps(orchestrator="Prefect")
+
+
+def _local_callable(fn):
+    """Return the undecorated function for a Prefect task, or the function itself."""
+    return getattr(fn, "fn", fn)
+
+
+def _run_steps(orchestrator: str = "plain Python") -> None:
     t0 = time.time()
     log("=" * 60)
     log(f"KDD Phase 1 - Preprocessing pipeline starting "
-        f"(orchestrator: {'Prefect' if _PREFECT else 'plain Python'})")
+        f"(orchestrator: {orchestrator})")
     log("=" * 60)
 
-    dfs      = t1_load()
-    agg_dfs  = t2_aggregate(dfs)
-    merged   = t3_merge(dfs, agg_dfs)
-    cleaned  = t4_clean(merged)
-    imputed  = t5_missing(cleaned)
-    outlier_treated = t6_outliers(imputed)
-    engineered = t7_engineer(outlier_treated)
-    encoded    = t8_encode(engineered)
-    t9_scale(encoded)
-    t10_feature_selection()
+    # Calling the task's ``fn`` attribute bypasses Prefect's temporary API.  This
+    # keeps local reruns deterministic even when the installed Prefect/FastAPI
+    # versions are incompatible, while preserving the optional Prefect flow.
+    load = _local_callable(t1_load)
+    aggregate = _local_callable(t2_aggregate)
+    merge = _local_callable(t3_merge)
+    clean = _local_callable(t4_clean)
+    missing = _local_callable(t5_missing)
+    outliers = _local_callable(t6_outliers)
+    engineer = _local_callable(t7_engineer)
+    encode = _local_callable(t8_encode)
+    scale = _local_callable(t9_scale)
+    feature_selection = _local_callable(t10_feature_selection)
+
+    dfs = load()
+    agg_dfs = aggregate(dfs)
+    merged = merge(dfs, agg_dfs)
+    cleaned = clean(merged)
+    imputed = missing(cleaned)
+    outlier_treated = outliers(imputed)
+    engineered = engineer(outlier_treated)
+    encoded = encode(engineered)
+    scale(encoded)
+    feature_selection()
 
     elapsed = time.time() - t0
     log("=" * 60)
     log(f"Pipeline complete in {elapsed:.1f}s")
-    log("Output: datasets/final/features_clustering.csv")
+    log("Output: datasets/final/features_business.csv")
+    log("        datasets/final/features_clustering.csv")
     log("        results/phase1_preprocessing/feature_importance.csv, high_corr_pairs.csv")
     log("=" * 60)
 
 
 if __name__ == "__main__":
-    main()
+    # Prefect is opt-in for local execution.  The plain runner performs the
+    # exact same steps without starting a temporary API server.
+    if os.environ.get("HOME_CREDIT_USE_PREFECT", "0") == "1" and _PREFECT:
+        main()
+    else:
+        _run_steps()

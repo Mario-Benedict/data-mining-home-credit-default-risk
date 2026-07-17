@@ -1,101 +1,260 @@
-# End-to-End Validation Report
+# End-to-end validation report
 
-Dataset: Home Credit Default Risk.
-Scope: an audit of the whole process from initial data review through data preparation, customer segmentation, behaviour rules, anomaly detection, and the dashboard, including the defects found along the way, the fixes applied, and the final verified figures.
+Validation date: 2026-07-16
 
-## Summary
+## Final status
 
-The project went through several audit rounds. Two critical defects and several methodological weaknesses were found in earlier states of the work, each was fixed, and every step was re-run from scratch after each fix. The final state passes all consistency checks, and the discovered structure is validated against real outcomes that the algorithms never saw.
+`VERIFIED`
 
-| # | Finding | Severity | Status |
-|---|---------|----------|--------|
-| 1 | A saved set of group labels from an older run (331,219 rows) was joined to a newer feature table (356,255 rows), silently mixing up the group assignments for every later step built on it | Critical | Fixed, re-run; automatic checks added to catch this in future |
-| 2 | The behaviour rule step used a hard-coded name-to-group mapping that did not match the actual groups found, attributing rules to the wrong customer segments | Critical | Fixed; a shared naming file now keeps names consistent across all steps |
-| 3 | Three columns that measure the same thing were all kept, giving that one dimension three times the weight in every similarity calculation | Methodological | Fixed by changing the encoding approach |
-| 4 | Category fields were turned into long lists of yes/no columns, which distorts similarity calculations for grouping | Methodological | Replaced with ordered scale and frequency-based encoding |
-| 5 | Small ordered columns escaped the standardization step because the check only looked at the data type, silently over-weighting them | Latent bug | Fixed; detection now checks the actual range of values |
-| 6 | Hierarchical grouping had collapsed 94 percent of rows into one group (agreement with K-Means was 0.02) | Methodological | Replaced with Ward linkage on a representative sample; agreement now 0.55 |
-| 7 | Density-based grouping in the compressed space saw one undifferentiated mass | Methodological | Moved to a layout that preserves local neighbourhood structure, with an automatically chosen radius |
-| 8 | Anomaly detection relied only on per-column signals plus one combination-aware signal | Methodological | Added a robust combination-aware signal, then a local density-ratio signal (Local Outlier Factor); six signals total |
-| 9 | The standard threshold for the combination-aware signal flagged a third of the portfolio | Calibration | Demonstrated clearly in the notebook, then set empirically at the top 2.5 percent of scores |
-| 10 | A flat 1.5x IQR fence, applied to every numeric column including binary flags and zero-inflated fields, flagged 201,278 rows (56.5 percent of the portfolio), an order of magnitude more than any other signal | Methodological | Replaced with a skew-adjusted boxplot rule (Hubert and Vandervieren, 2008) restricted to genuinely continuous columns, with the fence multiplier calibrated per column, not a shared constant, to a fixed 1 percent target flag rate; a further guard abstains on any column whose middle 50 percent collapses onto one shared value (no credit card, no bureau record, an imputed missing-score placeholder). IQR flags fell to 1,251, in line with the rest of the ensemble |
-| 11 | The per-column calibration search used a fixed upper bound, which silently under-widened the fence for columns with a tiny interquartile range relative to their tail (a payment ratio parked within a hair of its median for most applicants, with a long thin tail beyond it), leaving those columns flagging 10x the intended rate | Latent bug | Fixed by expanding the search bound until it is demonstrably wide enough, and by returning the boundary that never exceeds the target rate rather than a midpoint that could still overshoot on a quantised column |
+| Measure | Result |
+|---|---:|
+| Independent checks | 68 |
+| Passed | 67 |
+| Warnings | 1 |
+| Failed | 0 |
+| Notebooks executed without cell errors | 4 of 4 |
+| Raw files hashed in material passport | 8 |
 
-## Data preparation, verified
+The machine-readable results are in:
 
-| Check | Result |
-|-------|--------|
-| Input | 7 raw data files, including relational tables with up to 27.3 million rows |
-| Output | A single clean table: 356,255 rows, applicant ID plus 47 standardized numeric features |
-| Missing values remaining | 0 |
-| Closely correlated pairs remaining | 1, a mean/max pair of the same metric, documented |
-| Feature importance assessment | 47 features, assessed against the default label on 307,511 applicants |
-| Orchestration | A ten-step pipeline with a plain-Python fallback |
+- `results/validation/end_to_end_checks.csv`
+- `results/validation/fallacy_audit.csv`
+- `results/validation/material_passport.json`
+- `results/validation/verification_summary.json`
 
-The category encoding is the most consequential decision: education as an ordered scale from 0 to 4, income type and work sector as frequency-based single numbers. The reasoning is set out in full in `reports/reasoning_validation.md`.
+## Reproduction performed
 
-## Customer segmentation, verified
+The verification run executed these steps from the project root:
 
-| Check | Result |
-|-------|--------|
-| Compression | 10 components, the practical ceiling for a distance-based method on this data |
-| Number of groups | Elbow chart points to 5; score confirms 5 is best among the usable options |
-| K-Means | Full 356,255 applicants, five segments |
-| Hierarchical (Ward) | Agreement with K-Means 0.55, a genuine independent confirmation |
-| Density-based | Neighbourhood layout, automatically chosen radius, 30 dense pockets, 1,085 isolated cases passed to anomaly review |
-| Segments | Minimal Borrower 35.5%, Ambitious Borrower 35.1%, Active Veteran 13.2%, Intensive Card User 15.2%, Troubled Borrower 1.0% |
+1. Full applicant-level preprocessing and feature selection.
+2. Notebook regeneration followed by code-cell parsing.
+3. Phase 1 exploratory analysis.
+4. Phase 2 clustering.
+5. Phase 3 association mining.
+6. Phase 4 anomaly and outcome diagnostics.
+7. Independent contract and fallacy checks.
+8. Live dashboard HTTP, callback, desktop, and mobile tests.
 
-Group numbering shifts between runs, so the name mapping is saved to a shared file and every downstream step reads from it.
+The local runner bypasses Prefect's temporary API by default. The installed Prefect/FastAPI pair could not start a compatible temporary server, so relying on Prefect would have blocked reproducibility before any data step ran. The direct path calls the same deterministic step functions.
 
-## Behaviour rules, verified
+## Raw material passport
 
-| Check | Result |
-|-------|--------|
-| Transactions | All 356,255 applicants, discretized into 7 binned dimensions |
-| Algorithms | Three independent rule-finding methods all produced identical rule sets, the strongest available correctness check |
-| Final rules | 15 (three per segment) after strength, reliability, and redundancy filters; strength ratios from 1.8 to 4.6 |
+The passport records SHA-256 hashes, byte sizes, and row/column contracts for:
 
-## Anomaly detection, verified
+- `application_train.csv`
+- `application_test.csv`
+- `bureau.csv`
+- `bureau_balance.csv`
+- `previous_application.csv`
+- `POS_CASH_balance.csv`
+- `installments_payments.csv`
+- `credit_card_balance.csv`
 
-Six detection signals run per application:
+Train and test contain 307,511 and 48,744 unique application IDs. Their union is 356,255, with no overlap. All applicant-level outputs retain 356,255 unique IDs.
 
-| Signal | What it detects | Cases flagged | Note |
-|--------|----------------|---------------|------|
-| Per-column robust check (skew-adjusted IQR) | Single-figure extremes, judged against each column's own, correctly skewed sense of normal | 1,251 | Restricted to genuinely continuous columns, with fences that stretch and tighten by the medcouple and a multiplier calibrated per column to a 1 percent target flag rate, not a shared constant; a zero-width box (a mass point covering more than half the applicants, such as no card or no bureau record) abstains rather than flagging every ordinary customer who differs from it |
-| Per-column sensitive check (Z-score) | Single-figure extremes, more sensitive | 5,815 | Naive baseline, deliberately left symmetry-assuming, calibrated to the same 1 percent target rate as a fair contrast to the adjusted IQR |
-| Combination-aware check (robust Mahalanobis) | Unusual combinations of otherwise normal values | 8,907 | Threshold set at top 2.5 percent after the standard threshold was shown to flag a third of the portfolio |
-| Random partitioning check (Isolation Forest) | Non-linear unusual patterns | 17,813 | No distribution assumption |
-| Local density-ratio check (Local Outlier Factor) | An applicant whose neighbourhood is sparser than its neighbours' own | 8,907 | Threshold also set at top 2.5 percent, fitted in novelty mode on a 20,000-row sample of the same continuous columns as Mahalanobis |
-| Density-based check (DBSCAN) | Cases sitting in no dense region of the customer map | 1,085 | Independent cross-check from the segmentation step |
+### The one warning
+
+`bureau_balance.csv` contains 3,120,184 monthly rows whose `SK_ID_BUREAU` has no parent record in `bureau.csv`. This is 11.43% of the monthly table. Without the parent record, those rows cannot be mapped to `SK_ID_CURR`.
+
+The pipeline excludes these orphan months from applicant aggregation and records the count. It does not guess an applicant ID or impute a bureau relationship. This warning limits completeness but does not break applicant-key integrity.
+
+## Phase 1 contracts
 
 | Check | Result |
-|-------|--------|
-| High-confidence cases (3 or more signals agree) | 2,404 (0.7 percent of the portfolio), every one reviewed with a real applicant ID |
-| Type of deviation | Global 2,013, Contextual 354, Collective 37 |
-| Business classification | Data quality issue 1,616; Rare but valid 671; Risk signal 117 |
+|---|---|
+| Business artifact | 356,255 rows, 64 columns |
+| Clustering artifact | 356,255 rows, ID plus 49 features |
+| Duplicate applicant IDs | 0 |
+| Non-finite clustering values | 0 |
+| TARGET in clustering matrix | No |
+| Gender in clustering matrix | No |
+| Source-value audit columns in distance matrix | No |
+| Source-value audit columns in business artifact | Yes |
+| External-score missingness flags | Present |
+| Continuous robust clipping | 37 axes, p0.5/p99.5 |
+| Correlation pairs above 0.85 | 1 |
 
-## The honesty test: validation against real outcomes
+The single high-correlation pair is mean versus maximum card utilization, absolute correlation 0.892. It remains documented because the two measures have different business meanings.
 
-The default label was never used during any of the analysis. It was opened only afterwards, to measure the actual default rate of each discovered group on the 307,511 applicants where outcomes are known.
+The mutual-information check uses 307,511 train IDs aligned by `SK_ID_CURR`. Standardized ordinal values are factorized in a temporary estimator copy so discrete entropy estimation is methodologically valid.
 
-| Discovered structure | Actual default rate |
-|----------------------|---------------------|
-| Portfolio average | 8.07% |
-| Ambitious Borrower | 6.08% |
-| Minimal Borrower | 8.45% |
-| Active Veteran | 9.19% |
-| Intensive Card User | 10.79% |
-| Troubled Borrower | 11.37% |
-| Anomaly level: none flagged | 7.71% |
-| Anomaly level: one signal | 11.29% |
-| Anomaly level: two signals | 12.89% |
-| Anomaly level: three or more signals | 13.62% |
-| Business type: data quality issue | 13.46% |
-| Business type: rare but valid | 14.24% |
-| Business type: risk signal | 12.26% |
+## Phase 2 contracts
 
-The default rate rises without a single exception from the portfolio average through every segment and every anomaly tier, from 7.71 percent for untouched applications to 13.62 percent for the high-confidence tier. One number is reported honestly rather than smoothed into a tidy story: among the three business types, risk signal (12.26%) does not come out highest, rare but valid (14.24%) does, though the risk-signal group is only 106 applicants with a known outcome, so its rate carries a wide margin of error and this ordering should not be read as evidence that risk signals are less dangerous than rare-but-valid cases. What holds cleanly, and is the comparison that actually matters for the business case, is that every anomaly tier and every business type defaults well above the 8.07 percent portfolio baseline, and the tier gradient climbs in strict order with no exceptions. For methods that never saw the label, this remains strong evidence that the structure found is real.
+### K selection and stability
 
-## Checks that keep the process honest
+K=3 has the highest sampled silhouette, 0.250. K=5 has silhouette 0.140 and is retained for business resolution. Its smallest sampled segment share is 2.18%; its largest is 34.42%.
 
-Four mechanisms now prevent the earlier classes of defect from recurring. Automatic alignment checks in the behaviour rule and anomaly steps fail clearly if an outdated file is loaded. The shared naming file is the single source of segment names across all steps. The applicant ID flows through every output file so any finding can be traced back to a real individual. And the dashboard reads every number from the output files at startup, so nothing on screen can drift from the analysis underneath it.
+Pairwise adjusted Rand indices across seeds are:
+
+| Seeds | ARI |
+|---|---:|
+| 42 vs 52 | 0.997876 |
+| 42 vs 62 | 0.998086 |
+| 52 vs 62 | 0.998911 |
+
+### PCA sensitivity
+
+| Components | Retained variance | ARI versus 10 PCs |
+|---:|---:|---:|
+| 10 | 55.59% | 1.000 |
+| 21 | 81.25% | 0.965 |
+| 27 | 90.77% | 0.963 |
+| 49 | 100.00% | 0.963 |
+
+The old statement that PC11 added 0.08 percentage points was rejected. PC11 adds 2.72 points.
+
+### Method sensitivity
+
+Sampled Ward nearest-center assignment versus K-Means has ARI 0.719 and NMI 0.726. The report labels this an approximation and a moderate agreement result.
+
+DBSCAN has exactly 50,000 sampled rows and 914 noise points. The exported sample validation compares every clustering feature mean with the full portfolio. DBSCAN remains labeled a sampled UMAP density diagnostic.
+
+### Segment lineage
+
+| Cluster | Neutral label | Applications |
+|---:|---|---:|
+| 0 | Intensive Card User | 54,535 |
+| 1 | Repayment-Stress History | 7,637 |
+| 2 | Thin-File / Low-Intensity | 121,820 |
+| 3 | High-Exposure Applicant | 119,937 |
+| 4 | History-Rich Credit User | 52,326 |
+
+Names are written to both the result and final-dataset locations. The dashboard reads the shared result artifact.
+
+## Phase 3 contracts
+
+| Check | Result |
+|---|---:|
+| Final rules | 15 |
+| Rules per segment | 3 |
+| Minimum lift | At least 1.2 |
+| Non-positive support counts | 0 |
+| Protected/life-stage vocabulary | 0 |
+| Pure algebraic rules | 0 |
+| Same-source missingness identities | 0 |
+
+The verified rejection audit contains 565 algebraic financial identities and 279 same-source missingness identities. The selector also prevents two displayed rules from using an identical antecedent within the same segment.
+
+Global algorithm agreement uses the same full-portfolio transactions for Apriori, FP-Growth, and ECLAT. Per-segment FP-Growth retains its segment denominator and is not counted as independent global confirmation.
+
+## Phase 4 anomaly contracts
+
+| Category | Records |
+|---|---:|
+| At least 3 detectors and at least 50% available-detector agreement | 3,758 |
+| Two detectors | 5,431 |
+| One detector | 20,532 |
+| No detector flag | 326,534 |
+
+The review CSV contains 3,758 rows and 3,758 unique applicants. Required fields are complete:
+
+- source-based record evidence;
+- evidence-value basis;
+- detector names and available-detector scope;
+- business interpretation;
+- review priority and owner;
+- applicant-specific recommended action; and
+- `Automatic Decision Allowed = No`.
+
+Review-owner components are deduplicated. For the tested applicant 100221, the live dashboard shows observed installment, bureau, and card evidence; a multi-step human action; owners `Credit Review / Customer Assistance / Revolving Credit Review`; and no automatic decision permission.
+
+## Outcome metric reconstruction
+
+### Cluster outcome alignment
+
+Only train IDs enter the confusion matrix:
+
+| Actual / flag | Not flagged | Flagged | Total |
+|---|---:|---:|---:|
+| Actual non-default | 235,029 | 47,657 | 282,686 |
+| Actual default | 19,034 | 5,791 | 24,825 |
+| Total | 254,063 | 53,448 | 307,511 |
+
+Recomputed metrics:
+
+- flagged share = 53,448 / 307,511 = 17.38%;
+- precision = 5,791 / 53,448 = 10.83%;
+- recall = 5,791 / 24,825 = 23.33%;
+- specificity = 235,029 / 282,686 = 83.14%; and
+- lift = 10.83% / 8.07% = 1.34x.
+
+Average precision is 9.53% and ROC AUC is 0.557. The highest complete-segment default rate is 11.91%, recorded as the cluster precision ceiling.
+
+### Supervised diagnostic
+
+The five-fold logistic reference uses 307,511 train rows and zero test rows. Its flagged share is matched to 17.38%.
+
+| Metric | Cluster alignment | Logistic diagnostic |
+|---|---:|---:|
+| Precision | 10.83% | 21.75% |
+| Recall | 23.33% | 46.84% |
+| Lift | 1.34x | 2.69x |
+| Average precision | 9.53% | 23.33% |
+| ROC AUC | 0.557 | 0.751 |
+
+The comparison passes the objective-mismatch check. It is not marked as deployment validation.
+
+## Statistical-fallacy audit
+
+All eleven required items are present in `fallacy_audit.csv`:
+
+| Fallacy | Assessment |
+|---|---|
+| Simpson's paradox | Limitation |
+| Ecological fallacy | Mitigated |
+| Berkson's paradox | Limitation |
+| Collider bias | Mitigated |
+| Base-rate neglect | Mitigated |
+| Regression to the mean | Not applicable |
+| Survivorship bias | Limitation |
+| Look-elsewhere effect | Limitation |
+| Garden of forking paths | Mitigated |
+| Causation fallacy | Mitigated |
+| Reverse causality | Mitigated |
+
+Limitations remain visible rather than being forced into a pass state.
+
+## Dashboard verification
+
+### Payload and lazy rendering
+
+| Measurement | Old dashboard | Final dashboard |
+|---|---:|---:|
+| Initial `/_dash-layout` payload | 6,724,465 bytes | 2,686 bytes |
+| Anomaly records embedded at initial load | Thousands of long-form rows | 0 |
+| Phase plots embedded at initial load | All | Active tab only |
+
+The final dependencies endpoint returns HTTP 200 and 1,472 bytes. The root and layout endpoints return HTTP 200.
+
+### Desktop, 1440x900
+
+- Document width: 1,425px inside a 1,440px viewport; no horizontal page overflow.
+- Outcome metric-card widths: 318px each.
+- Wide outcome plots: 1,274x380px.
+- Two-column plots: 611x380px.
+- Segment comparison plot: 1,274x455px.
+- The content begins directly after the navigation. A Dash internal `.tab-content` name collision that previously inserted a 620px blank block was removed.
+- Browser console: no messages, warnings, or errors in the final clean tab.
+
+### Mobile, 390x844
+
+- Document width: 375px inside a 390px viewport; no horizontal page overflow.
+- Navigation client and scroll widths: both 351px; all five tabs fit.
+- Metric cards: 169px in the two-column grid.
+- Standard plots: 319x325px; tall plots: 319x365px.
+- Segment cards: 347px and stacked.
+- Wide heatmaps use local scroll containers at 600-720px; the document itself does not overflow.
+- Anomaly DataTable: 486px high, 10 data rows per page, and local 1,092px horizontal sheet width.
+- Tab changes set the new content top to 47px, exactly below the 47px sticky navigation.
+- The detector count label `17,813` is fully visible after x-axis headroom was added.
+
+### Callback checks
+
+- Anomaly row selection loads record-specific detail.
+- Segment text filter `Intensive Card User` reduces pagination from 376 to 51 pages; all ten visible rows match.
+- Applicant ID custom sort returns ascending IDs beginning 101048, 101405, 102551, and 102934.
+- The parser accepts the `scontains` token emitted by the installed Dash DataTable version.
+
+## Final validation judgment
+
+The executable workflow, regenerated notebooks, CSV lineage, metric arithmetic, and responsive dashboard agree. The project is verified for the assignment's discovery and interpretation scope. Cluster outcome alignment is explicitly too weak for applicant decisions, and the supervised comparison is explicitly not production validation.

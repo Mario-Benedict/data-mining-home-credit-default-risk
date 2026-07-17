@@ -34,16 +34,27 @@ def compute_mutual_info(features: pd.DataFrame, target: pd.Series) -> pd.DataFra
     A fixed random_state keeps the result reproducible.
     """
     log(f"  Computing mutual_info_classif on {features.shape[1]} features ...")
+    # Low-cardinality flags/ordinals are discrete variables.  Treating them as
+    # continuous would use the wrong k-nearest-neighbour entropy estimator.
+    discrete_mask = np.array([features[c].nunique(dropna=False) <= 10 for c in features.columns])
+    # Some ordinal variables are standardized in the mining matrix, so their
+    # category levels are represented by non-integer floats.  Factorize a copy
+    # before the discrete MI estimator; otherwise scikit-learn correctly warns
+    # that a continuous-looking vector is being used as a class label.
+    mi_features = features.copy()
+    for column in mi_features.columns[discrete_mask]:
+        mi_features[column] = pd.factorize(mi_features[column], sort=True)[0]
     mi_scores = mutual_info_classif(
-        features.values,
+        mi_features.values,
         target.values,
-        discrete_features=False,
+        discrete_features=discrete_mask,
         random_state=42,
         n_neighbors=3,
     )
     df = pd.DataFrame({
         "feature": features.columns,
         "mutual_info": mi_scores,
+        "is_discrete": discrete_mask,
     }).sort_values("mutual_info", ascending=False).reset_index(drop=True)
     df["rank"] = df.index + 1
     return df

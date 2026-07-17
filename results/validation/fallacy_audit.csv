@@ -1,0 +1,12 @@
+fallacy,assessment,evidence,remaining_risk
+Simpson's paradox,LIMITATION,Overall base rate and all segment rates are shown together.,"No product, market, or time strata are available for a full reversal test."
+Ecological fallacy,MITIGATED,Cluster rates are explicitly barred from individual approve/decline decisions.,Readers may still overgeneralize a segment average without the guardrail.
+Berkson's paradox,LIMITATION,Claims are limited to the observed Home Credit application portfolio.,Applicant selection mechanisms are unavailable; population generalization is unsupported.
+Collider bias,MITIGATED,No causal effect is estimated after conditioning on discovered clusters.,Segment-context associations remain descriptive only.
+Base-rate neglect,MITIGATED,"Precision, lift, average precision, false positives, and the 8% base rate are reported together.",Operational costs still need an approved cost function.
+Regression to the mean,NOT_APPLICABLE,There is no before/after intervention or treatment-effect claim.,Future monitoring should avoid interpreting natural score movement as remediation impact.
+Survivorship bias,LIMITATION,No-history states are separated from clean observed history.,Public-table availability and prior-loan observation still define who can appear in behavior summaries.
+Look-elsewhere effect,LIMITATION,"Rule thresholds, compact search length, rejection reasons, and final counts are exported.",Rules are exploratory; no multiplicity-adjusted external holdout is available.
+Garden of forking paths,MITIGATED,"Seeds, K range, thresholds, sensitivity tables, and rejected interpretations are fixed in code.",K=5 and anomaly operating points retain documented business judgment.
+Causation fallacy,MITIGATED,"Association, anomaly, and cluster outputs are labeled descriptive and non-causal.",No intervention data exist to support causality.
+Reverse causality,MITIGATED,"Repayment history is used as observed context, never as a causal mechanism claim.",Temporal recency and cure status are aggregated and require record review.

@@ -1,30 +1,94 @@
-# 10-Minute Presentation Outline
+# Dashboard presentation outline
 
-Five members, each presenting their own area of the work. Visual support: the live dashboard or the figures in the results folders.
+Target length: 11 to 13 minutes.
 
-| Minutes | Section | Presenter | Key content |
-|---------|---------|-----------|-------------|
-| 0 - 1 | Opening | Insight Communicator | 356 thousand credit applications, 7 data sources, 27 million rows of repayment history. One question: what is actually hidden in all of this? |
-| 1 - 2.5 | Data preparation | Data Engineer 1 | Ten preparation steps turn 7 raw files into 47 clean features. The decisions that mattered: handling the employment placeholder that affects 18 percent of the data, bringing together 5 relational data sources at the applicant level, and encoding category fields for similarity-based grouping (ordered scale and frequency-based encoding instead of yes/no columns) after a correlation check exposed a redundancy problem |
-| 2.5 - 4.5 | Customer segmentation | Segmentation Specialist | Two standard charts both point to 5 groups. Three methods run: K-Means as the primary segmenter, Ward hierarchical as the independent check (agreement 0.55), and a density-based method as the noise detector. Five named customer segments. The number that stops the room: the biggest borrowers default the least |
-| 4.5 - 6.5 | Behaviour rules | Pattern Analyst | Seven dimensions binned into equal-sized categories, then three independent rule-finding algorithms each find the same rule set. Fifteen final rules survive the strength, reliability, and redundancy filters. Strongest example: senior applicants with a heavy repayment burden in the Minimal Borrower group, occurring 4.6 times more often than chance. The Troubled Borrower group carries an internal rule with 99 percent reliability |
-| 6.5 - 8.5 | Anomaly investigation | Data Engineer 2 | Six signals, two per-column and four whole-row. The per-column checks use a skew-adjusted fence with a multiplier calibrated per column to a fixed 1 percent flag rate, rather than a flat, shared multiplier, since credit data is inherently skewed and unevenly scaled column to column; an unguarded flat rule flagged 56 percent of the portfolio, and the fix brought it down to 0.4 percent. The combination signals include a robust one whose standard textbook threshold visibly fails on credit data, calibrated on the data itself instead, plus a local density-ratio signal that catches applicants whose neighbourhood is sparser than their neighbours' own. Final verdict by agreement: three or more signals, 2,404 cases. Each flagged case gets a deviation type (global, contextual, collective) and a business classification: a probable data quality issue, a rare but valid profile, or a risk signal, each with a short, per-record, data-driven business impact and recommendation. Closing number: every anomaly tier defaults above untouched applications in strict order with no exceptions, and the detectors never saw the default label |
-| 8.5 - 10 | Synthesis | Insight Communicator | Three findings, five segment recommendations, a 30-second dashboard demonstration |
+## Run of show
 
-## Answers for the Mining Expo
+| Time | Dashboard view | Main point |
+|---|---|---|
+| 0:00-1:00 | Overview | The assignment is knowledge discovery. Train and test are combined for unlabeled discovery; only 307,511 train IDs enter outcome metrics. |
+| 1:00-2:15 | Overview, data-quality panels | Missing history is separated from clean history. Source values are preserved even when model values are clipped or imputed. |
+| 2:15-4:30 | Segments | K=5 is stable and useful, but K=3 has the best silhouette. Compare all five profiles on one scale. |
+| 4:30-5:20 | Segments, DBSCAN plot | DBSCAN is a 50,000-row UMAP sample. Its 914 noise points are exploratory, not fraud/default labels. |
+| 5:20-7:00 | Rules | Show one utilization rule, one repayment rule, and one thin-file availability rule. Read support count and denominator before lift. |
+| 7:00-9:00 | Anomalies | The 3,758-row queue requires detector consensus and record-specific evidence. Open one row and show the human action plus `Automatic Decision Allowed = No`. |
+| 9:00-11:15 | Outcome | Explain 10.83% precision and 23.33% recall as a cluster-objective limitation. Compare with the matched-capacity logistic diagnostic at 21.75% and 46.84%. |
+| 11:15-12:30 | Outcome / close | Clustering supports portfolio strategy; a separate governed supervised process is needed for applicant prediction. |
 
-### Which rule was the most surprising, and why?
+## Suggested narration
 
-"A small loan with a heavy repayment burden means low income", holding with reliability above 98 percent and covering about a tenth of the portfolio. The common assumption is that large loans are the dangerous ones. The data says the opposite twice over: the segment with the largest loans has the lowest default rate, and it is actually the small loans that hide a fragile, shock-sensitive sub-population, because their incomes are just as small as their loans.
+### Opening
 
-### Which grouping method produced the most interpretable segments?
+"This project asks what structure and actionable patterns exist in the Home Credit portfolio. It does not ask us to maximize Kaggle prediction accuracy. I still test historical outcome alignment at the end, but I keep that separate from the unsupervised discovery work."
 
-K-Means with five groups. The segments come out compact and easy to name because the features were standardized and compressed first. Ward hierarchical grouping shows a similar five-group structure, confirming it is real. The density-based method is a poor segmenter on this data (it finds one large group plus isolated fringes) but an excellent noise detector: the isolated points it identifies default well above average.
+### Data boundary
 
-### What unusual cases were found, and what do they mean in a real banking context?
+"The full discovery population has 356,255 applications. TARGET exists only for 307,511 train rows. The test set contributes to unlabeled pattern discovery, but it contributes zero rows to precision and recall."
 
-Three kinds with three different responses, and the first kind is deliberately never called an outlier. First, cases where a figure deviates so far (more than 50 times its segment's typical value) that it almost certainly reflects a data entry mistake rather than genuine unusual behaviour; nobody's real income or loan is fifty times their peer group's norm, so these need to be verified and corrected before any credit decision is made, not treated as a risk finding. Second, rare but legitimate profiles that represent a business opportunity if routed to appropriate handling instead of being automatically declined. Third, genuine risk signals where the financial details simply do not add up together, which must be reviewed individually by a credit officer. The lesson: unusual cases are not one category to be discarded, and not every statistical deviation is a real behavioural outlier; each type calls for a different response from the business.
+"The preprocessing also keeps two versions of sensitive numeric evidence. Robust model values support stable distances; preserved source values support honest record explanations."
 
-### How do the findings compare with work in other financial domains?
+### Segments
 
-The approach is the same, but the meaning of what is found depends on the domain. In credit risk, unusual cases split into three types with different business responses. In fraud detection or financial crime prevention, almost every unusual case is an investigation lead. Customer segmentation works the same way across domains too: the groups found here are credit personalities, while in a customer retention project the groups are typically customer lifecycle stages. The same analytical approach, but different knowledge comes out of it.
+"K=3 has the strongest silhouette. I retain K=5 because it is near the elbow, stable across seeds, and gives five distinct operational profiles. I am not calling K=5 statistically optimal on every metric."
+
+"The heatmap colors mean above or below the portfolio reference for the named feature. They do not mean approve or decline."
+
+Short profile prompts:
+
+- Intensive Card User: "Review current utilization, balances, payment capacity, and limit suitability."
+- Repayment-Stress History: "Review recency, severity, cure status, and current affordability."
+- Thin-File / Low-Intensity: "Treat limited history as uncertainty, not clean behavior."
+- High-Exposure Applicant: "Verify income and stress the requested exposure."
+- History-Rich Credit User: "Use the deeper history to reconcile current obligations."
+
+### Rules
+
+"Global algorithm agreement is only counted when Apriori, FP-Growth, and ECLAT use the same full-portfolio transactions. Segment rules keep their own denominator."
+
+"Very high lift on thin-file rules mostly describes information availability across tables. That is useful for evidence collection, but it is not a repayment-quality signal."
+
+### Anomalies
+
+"A record enters the consensus queue only when at least three available detectors agree and the agreement share is at least half. Because DBSCAN only covers its sample, each record also shows how many detectors were available."
+
+"The queue is for reconciliation, affordability review, or documenting a rare but plausible profile. It cannot issue an automatic decision."
+
+### Outcome page
+
+"The cluster flag is precise on 10.83% of flagged rows and captures 23.33% of observed defaults. That is above the 8.07% base rate, but it is too weak for applicant decisions. The highest complete segment rate is only 11.91%, so broad cluster scores have a hard precision ceiling."
+
+"At the same 17.38% review capacity, a train-only out-of-fold logistic diagnostic reaches 21.75% precision and 46.84% recall. This is what we expect when the method is trained for the outcome. It diagnoses the objective mismatch; it does not create a production model."
+
+### Close
+
+"The project succeeds as a discovery system: stable segments, denominator-safe patterns, and a conservative review queue. Its negative finding is equally useful: cluster membership should not be used as the applicant default prediction."
+
+## Likely questions
+
+### Why not choose K=3?
+
+K=3 is the compact geometric winner. K=5 is retained for business resolution because it remains near the elbow, seed-stable, non-empty, and interpretable. Both facts are shown.
+
+### Is the Repayment-Stress segment a decline list?
+
+No. Its train default rate is 11.91%, so most members did not default. It is a prompt to review repayment evidence, not a decision label.
+
+### Why is High-Exposure lower-default historically?
+
+That is a cohort association, not a causal or individual guarantee. It may reflect selection, product mix, unobserved underwriting, or other confounding. Verify each applicant.
+
+### Can test precision be reported?
+
+No. The public test data has no TARGET. The project reports zero test rows scored.
+
+### Why does DBSCAN cover only 50,000 rows?
+
+UMAP and density clustering are expensive at full scale. The sample is reproducible and its standardized feature means are checked against the portfolio. The result is still labeled sampled.
+
+### Are anomalies defaults?
+
+No. An anomaly is unusual. It may be a data issue, rare legitimate case, or a file needing affordability/repayment review.
+
+### Is the logistic diagnostic production ready?
+
+No. Production requires out-of-time validation, calibration, cost and capacity analysis, fairness testing, governance approval, and monitoring.

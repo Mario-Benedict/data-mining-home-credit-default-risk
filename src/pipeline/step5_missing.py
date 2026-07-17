@@ -6,8 +6,8 @@ that a value was originally absent.
 
 Strategy by column (EDA Section 3):
   FLAG_NO_CAR              -> OWN_CAR_AGE missing = applicant has no car
-  FLAG_NO_HOUSING_DATA     -> all BUILDING_MODE_COLS missing = non-apartment housing
-  FLAG_EXT_SOURCE_1_MISSING -> EXT_SOURCE_1 56.4% missing = thin credit file
+  FLAG_NO_HOUSING_DATA     -> all BUILDING_MODE_COLS missing = no recorded building detail
+  FLAG_EXT_SOURCE_*_MISSING -> score availability is uncertainty, not adverse evidence
   FLAG_SENTINEL_EMPLOYED   -> already created in step4
 
 Imputation:
@@ -16,7 +16,7 @@ Imputation:
   Mode   : NAME_TYPE_SUITE (categorical)
   "Unknown" fill : FONDKAPREMONT_MODE, HOUSETYPE_MODE, WALLSMATERIAL_MODE, EMERGENCYSTATE_MODE
   OCCUPATION_TYPE : mode within NAME_INCOME_TYPE group (group-mode imputation)
-  EXT_SOURCE_1 : global median (after flag created)
+  EXT_SOURCE_1/2/3 : median model value after source copy and missing flag
   Aggregated table NaNs : applicants with no records -> 0 (absence = no activity)
 """
 import numpy as np
@@ -54,9 +54,16 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
     df["FLAG_NO_HOUSING_DATA"] = housing_missing.astype(np.int8)
     log(f"  FLAG_NO_HOUSING_DATA=1: {housing_missing.sum():,}")
 
-    if "EXT_SOURCE_1" in df.columns:
-        df["FLAG_EXT_SOURCE_1_MISSING"] = df["EXT_SOURCE_1"].isna().astype(np.int8)
-        log(f"  FLAG_EXT_SOURCE_1_MISSING=1: {df['FLAG_EXT_SOURCE_1_MISSING'].sum():,}")
+    # Preserve source score availability for record-level explanations.  The
+    # model-facing values can be imputed, but a missing score must never be
+    # described as if it were an observed weak score.
+    for col in ["EXT_SOURCE_1", "EXT_SOURCE_2", "EXT_SOURCE_3"]:
+        if col in df.columns:
+            source_col = f"SOURCE_{col}"
+            flag_col = f"FLAG_{col}_MISSING"
+            df[source_col] = df[col]
+            df[flag_col] = df[col].isna().astype(np.int8)
+            log(f"  {flag_col}=1: {df[flag_col].sum():,}")
 
     # Zero imputation
     for col in ZERO_IMPUTE_COLS:

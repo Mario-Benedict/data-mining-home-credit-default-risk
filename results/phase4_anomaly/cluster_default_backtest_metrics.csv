@@ -1,0 +1,19 @@
+metric,value,business_definition
+evaluation_rows,307511.0,Train IDs only; test rows excluded
+test_rows_scored,0.0,No unlabeled test row enters scoring
+observed_default_rate,0.08072881945686496,TARGET=1 share in matched train rows
+flagged_share,0.17380841660948715,Share receiving the cluster risk flag
+precision,0.10834830115252207,Default share among cluster-risk flags
+recall,0.23327291037260825,Share of observed defaults captured by the flag
+specificity,0.831413653311448,Share of observed non-defaults not flagged
+f1,0.1479692869827399,Harmonic mean of precision and recall
+lift_vs_baseline,1.3421266640770682,Precision divided by portfolio default rate
+average_precision,0.09531188931044282,PR-area summary for the five-level cluster score
+roc_auc,0.5566206580851554,Ranking metric; secondary under class imbalance
+score_levels,25.0,Distinct cluster-rate scores available
+true_negative,235029.0,Confusion-matrix count
+false_positive,47657.0,Confusion-matrix count
+false_negative,19034.0,Confusion-matrix count
+true_positive,5791.0,Confusion-matrix count
+threshold_uplift,1.1,Flag if fold-trained cluster rate is at least this multiple of fold baseline
+cluster_precision_ceiling,0.11906841339155749,Highest observed default share in any complete segment

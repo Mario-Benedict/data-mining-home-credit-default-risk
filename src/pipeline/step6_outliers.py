@@ -31,6 +31,13 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
     log("Step 6 - Outlier treatment ...")
     df = df.copy()
 
+    # Keep the original applicant values for audit and anomaly explanations.
+    # Capping is appropriate for distance geometry; it must not silently alter
+    # the value quoted to a reviewer.
+    for col in sorted(set(WINSORIZE_CONFIG) | set(CAP_CONFIG)):
+        if col in df.columns and f"SOURCE_{col}" not in df.columns:
+            df[f"SOURCE_{col}"] = df[col]
+
     # Winsorize at configured percentile
     for col, pct in WINSORIZE_CONFIG.items():
         if col not in df.columns:

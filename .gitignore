@@ -5,3 +5,15 @@ __pycache__
 dump
 venv
 results/phase4_anomaly/*.csv
+
+# Keep the compact, reproducible Phase 4 summaries used by the dashboard and
+# reports. Large row-level detector matrices and OOF predictions remain ignored.
+!results/phase4_anomaly/anomaly_driver_summary.csv
+!results/phase4_anomaly/anomaly_review_by_segment.csv
+!results/phase4_anomaly/detector_jaccard_overlap.csv
+!results/phase4_anomaly/pca_anomaly_sample.csv
+!results/phase4_anomaly/cluster_default_backtest_metrics.csv
+!results/phase4_anomaly/cluster_default_confusion_matrix.csv
+!results/phase4_anomaly/cluster_default_policy_sweep.csv
+!results/phase4_anomaly/cluster_default_pr_curve.csv
+!results/phase4_anomaly/cluster_default_rates.csv

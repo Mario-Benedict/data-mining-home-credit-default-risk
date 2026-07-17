@@ -207,12 +207,15 @@ CLUSTERING_FEATURES = [
     "ANNUITY_TO_INCOME",         # debt-service burden ratio
     "CREDIT_TERM_MONTHS",        # implied loan duration (AMT_CREDIT / AMT_ANNUITY)
 
-    # Demographics (EDA §4, §10: DAYS_BIRTH -> positive years; sentinel flag)
+    # Demographics / life-stage context (EDA §4, §10: DAYS_BIRTH -> positive
+    # years; sentinel flag). CODE_GENDER is deliberately excluded from the
+    # clustering feature set. It remains available in the source data for
+    # descriptive fairness monitoring, but it must not shape an operational
+    # segment or the cluster-based risk backtest.
     "YEARS_BIRTH",               # abs(DAYS_BIRTH)/365.25 - negative encoding fixed
     "YEARS_EMPLOYED",            # abs(DAYS_EMPLOYED)/365.25; 0 for sentinel rows
     "FLAG_SENTINEL_EMPLOYED",    # EDA §10: 18% pensioners/unemployed; 5.4% vs 8.7% default
     "CNT_CHILDREN",              # capped at 10 (EDA §10: implausible values)
-    "CODE_GENDER",               # binary F=1 M=0; XNA (4 rows) -> NaN (EDA §10)
     "NAME_CONTRACT_TYPE",        # binary Cash=1 Revolving=0
     "REGION_RATING_CLIENT_W_CITY",# retained from correlated pair (EDA §10: drop non-city)
     "OWN_CAR_AGE",               # 0 for no-car applicants (structural imputation)
@@ -223,7 +226,9 @@ CLUSTERING_FEATURES = [
     "EXT_SOURCE_1",              # strongest default predictor; 56.4% missing -> median
     "EXT_SOURCE_2",              # r < 0.22 with EXT_SOURCE_1 - independent signal
     "EXT_SOURCE_3",              # r < 0.22 with EXT_SOURCE_1 - independent signal
-    "FLAG_EXT_SOURCE_1_MISSING", # EDA §10: thin credit file indicator
+    "FLAG_EXT_SOURCE_1_MISSING", # score unavailable: uncertainty indicator
+    "FLAG_EXT_SOURCE_2_MISSING",
+    "FLAG_EXT_SOURCE_3_MISSING",
 
     # Credit enquiry frequency
     "AMT_REQ_CREDIT_BUREAU_YEAR", # winsorised at p99 (EDA §10)
@@ -246,6 +251,7 @@ CLUSTERING_FEATURES = [
     #   pct late, pct severely late >30d" prescribed in justification table)
     "INST_DPD_MEAN",
     "INST_DPD_MAX",
+    "INST_COUNT",                 # distinguishes clean observed history from no history
     "INST_LATE_RATIO",
     "INST_SEVERE_LATE_RATIO",    # >30d DPD
     "INST_PAYMENT_RATIO_MEAN",   # mean(paid/owed) - underpayment signal

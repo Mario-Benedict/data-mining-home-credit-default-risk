@@ -102,12 +102,14 @@ def aggregate_previous(prev: pd.DataFrame) -> pd.DataFrame:
       PREV_APPROVAL_RATE     - historical approval signal
       PREV_REFUSED_COUNT     - refusal history (risk signal)
       PREV_AMT_APPLICATION_MEAN - typical amount sought
-      PREV_DAYS_DECISION_MIN - days since most recent application decision
+      PREV_DAYS_DECISION_MAX - most recent application decision (closest to 0)
+      PREV_DAYS_DECISION_MIN - earliest observed application decision
     """
     log("  Aggregating previous_application ...")
 
-    # Days since most recent decision (min = closest to application date)
-    # DAYS_DECISION is stored as negative (days before current application)
+    # DAYS_DECISION is stored as negative days before the current application:
+    # max is therefore the most recent observation (closest to zero), while
+    # min is the earliest.  Keeping both prevents the common sign reversal.
     agg = prev.groupby("SK_ID_CURR").agg(
         PREV_COUNT                = ("SK_ID_PREV",            "count"),
         PREV_APPROVED_COUNT       = ("NAME_CONTRACT_STATUS",  lambda x: (x == "Approved").sum()),
@@ -117,7 +119,8 @@ def aggregate_previous(prev: pd.DataFrame) -> pd.DataFrame:
         PREV_AMT_CREDIT_MEAN      = ("AMT_CREDIT",            "mean"),
         PREV_AMT_CREDIT_MAX       = ("AMT_CREDIT",            "max"),
         PREV_DAYS_DECISION_MEAN   = ("DAYS_DECISION",         "mean"),
-        PREV_DAYS_DECISION_MIN    = ("DAYS_DECISION",         "min"),  # most recent
+        PREV_DAYS_DECISION_MIN    = ("DAYS_DECISION",         "min"),  # earliest
+        PREV_DAYS_DECISION_MAX    = ("DAYS_DECISION",         "max"),  # most recent
         PREV_RATE_DOWN_PAYMENT_MEAN = ("RATE_DOWN_PAYMENT",  "mean"),
         PREV_CNT_PAYMENT_MEAN     = ("CNT_PAYMENT",           "mean"),
         PREV_DAYS_FIRST_DRAWING_MEAN = ("DAYS_FIRST_DRAWING", "mean"),

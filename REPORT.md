@@ -1,163 +1,185 @@
-# Home Credit Default Risk: Knowledge Discovery Report
+# Home Credit default-risk knowledge discovery report
 
-A report covering the whole project, from raw data to business recommendations. The notebooks and the pipeline produce the tables, plots, and the interactive dashboard; this document is the narrative that ties them together.
+## Decision summary
 
-The dataset is the Home Credit Default Risk data from Kaggle. The work follows the KDD process from end to end. The goal is discovery and interpretation, not a prediction score: we want to understand who these customers are, how they cluster, what patterns connect their attributes, and which records deserve a closer look.
+The workflow is suitable for the assignment's stated purpose: discovering and interpreting portfolio structure. It is not a production default-prediction system.
 
-One ground rule shapes everything below. This is an unsupervised study, so the default label is never used to build the segments, the rules, or the anomaly scores. We only open the label at the very end, to check whether the structure we found lines up with real risk. Because the algorithms never saw it, that check is honest evidence rather than circular reasoning.
+The earlier low precision did not show that the entire process was wrong. It showed that an unsupervised cluster label is too coarse for applicant-level default prediction. In the verified run, cluster outcome alignment reaches 10.83% precision and 23.33% recall at a 17.38% review share. A separate train-only, out-of-fold logistic diagnostic reaches 21.75% precision and 46.84% recall at the same capacity. The difference comes from the objective: clustering optimizes similarity; logistic regression optimizes outcome separation.
 
-All 356,255 applications are used: 307,511 from the training file and 48,744 from the test file. Since there is no prediction target here, combining them is correct and gives the clustering more data to work with.
+The discovery pipeline now passes 67 of 68 independent checks. One raw-data warning remains: 3,120,184 of 27,299,925 `bureau_balance` rows have no matching `bureau` parent and cannot be mapped to an applicant. They are excluded from applicant aggregation and recorded in the validation material rather than silently imputed.
 
----
+## Scope and evaluation boundary
 
-## Data understanding and preparation
+| Population | Rows | Permitted use |
+|---|---:|---|
+| Combined train and test | 356,255 | Unlabeled, transductive discovery and portfolio profiling |
+| Labeled train | 307,511 | Train-only outcome diagnostics |
+| Unlabeled test | 48,744 | Discovery only; never enters precision, recall, lift, AUC, or calibration metrics |
 
-### What we found in the raw data
+The observed train default rate is 8.07%. This base rate must accompany every precision or lift statement. A precision of 10.83% is only 1.34 times the base rate, even though it is above random selection.
 
-Before changing anything we read the data closely. A few conditions stood out, and each one drove a specific preparation decision rather than a reflex.
+## Phase 1: data construction and preprocessing
 
-A placeholder value hides in the employment-length column. About 18 percent of applicants have an entry that translates to exactly one thousand years of employment. Every one of them is a pensioner or unemployed: employment length simply does not apply to them, so the data uses a stand-in figure. Left as-is it would throw off every similarity calculation, so we flagged those applicants as a separate group and treated the field as blank. Their actual default rate, 5.4 percent against 8.7 percent for everyone else, confirms that this flag marks a real and meaningful state.
+### Why combine the tables
 
-Income is extremely skewed. The typical applicant earns around 147 thousand, but the highest earner brings in about 795 times that. In a method that measures similarity by distance, a handful of extreme earners would swamp everyone else and make all ordinary customers look identical to each other. So income was capped at the top one percent and then smoothed with a log transform. The same smoothing was applied to the other money columns.
+The application row alone does not describe credit behavior. Bureau, previous-application, POS, installment, and credit-card histories are aggregated to `SK_ID_CURR`. Counts, recency, delinquency, utilization, approval history, and payment ratios give each application a portfolio context.
 
-Missing values are rarely just missing. A blank car-age field means the applicant has no car. A missing bureau score, absent for 56 percent of applicants, usually means the credit bureau could not score them at all, which is itself a signal of a thin financial history. So before filling anything we created flags that preserve the fact that a value was absent, because the absence is part of the story.
+Train and test are combined only after a source flag is preserved. This is acceptable for the assignment's unlabeled discovery setting. It would not be a valid way to estimate deployment performance for a supervised model.
 
-Several columns measure the same thing three different ways. Every building measurement is reported as an average, a mode, and a median, all correlated above 0.99. Keeping all three would give building attributes three times the weight of everything else. We kept one version and dropped the rest, ending up with 47 clean features.
+### Missingness
 
-### How we handled missing values
+Missing values have different business meanings:
 
-The approach matched the reason for the gap rather than using one rule for everything. When a blank genuinely means "none" (no car, no apartment record), we filled it with zero. Random gaps in numeric fields got the midpoint value for that field. Occupation type got the most common occupation among applicants in the same income bracket, which is more informative than a single global default. Credit history aggregates that were empty became zero, because no record means no activity.
+- No matched history is retained through flags such as `FLAG_NO_BUREAU` and `INST_COUNT`, because no history is not the same as clean history.
+- Missing external scores have their own flags. Median-filled values support computation but are never presented as observed scores in a case explanation.
+- Housing fields use an explicit no-record indicator. Zero-filled model values mean no recorded detail, not a literal zero-sized property.
+- The `DAYS_EMPLOYED=365243` sentinel is separated from genuine employment duration.
 
-One honest note: filling the midpoint into the 56 percent of rows that lack a bureau score piles most of them onto one value, which creates a slightly artificial cluster in the analysis. We kept it because the separate "no score" flag already separates that group, and dropping the feature entirely would throw away valuable information for the 44 percent who do have a score. It is a deliberate compromise, not an oversight.
+### Outliers and scaling
 
-### Preparing categories for a distance-based method
+Financial amounts and behavior ratios are skewed. Log transforms reduce scale compression for positive amounts. Continuous distance axes are clipped at the 0.5th and 99.5th percentiles before standardization so a handful of extreme files cannot consume K-Means centroids.
 
-The three categorical fields (education, income type, and work sector) were originally turned into a long list of yes/no columns. We reversed that decision, because yes/no columns cause two problems for similarity-based grouping. They add many nearly-empty columns that quietly dominate the distance calculations, and they force every category to be exactly as different from every other as possible, even when two categories are clearly similar.
+The original values are preserved in `SOURCE_*` columns. Clustering sees the robust model values; anomaly reviewers see the source values and whether a value was observed, capped, or imputed.
 
-Instead, education became a single number from zero to four, because it is a genuine ladder: the data shows a clean relationship between education level and loan size. Income type and work sector, which have no natural order, each became a single "how common is this?" number. This gives a tighter, more honest picture of similarity.
+The final artifacts contain 64 readable business/audit columns and 49 clustering features. Binary flags remain 0/1. Continuous and ordinal axes are standardized. Mutual information is computed against train TARGET only as a feature relevance check, not as a clustering input. One pair exceeds absolute correlation 0.85: mean and maximum card utilization, at 0.892.
 
-The result was 47 features instead of 65, only one remaining closely-correlated pair, and no redundant columns. A smaller, cleaner space is a better space for finding real groups.
+## Phase 2: segmentation
 
-### Choosing which features to keep
+### PCA and K-Means
 
-The selection used two measures. A correlation check identified columns that were nearly identical to each other and removed the redundant ones. An importance measure (how much information each feature carries about which customers eventually defaulted) identified which features were genuinely useful, including non-linear relationships that a simple correlation would miss. Low-importance features were not dropped automatically, because the goal is to find natural groups rather than to predict a number, but the scores gave us a principled, documented basis for the selection.
+Ten principal components retain 55.59% of variance. Component 11 adds 2.72 percentage points, so the old "0.08 percentage point" justification was wrong and has been removed.
 
-The full preparation runs as a ten-step pipeline, and the output is one clean, standardized table, one row per applicant, ready for the grouping and pattern-finding steps.
+Ten components remain the compact primary view because the K=5 labels are stable when more dimensions are retained:
 
----
+| Components | Variance retained | Silhouette | ARI versus 10 PCs |
+|---:|---:|---:|---:|
+| 10 | 55.59% | 0.144 | 1.000 |
+| 21 | 81.25% | 0.087 | 0.965 |
+| 27 | 90.77% | 0.073 | 0.963 |
+| 49 | 100.00% | 0.063 | 0.963 |
 
-## Customer segmentation
+K=3 has the highest sampled silhouette, 0.250. K=5 is retained as a business-resolution choice near the elbow, not as the universal statistical optimum. It produces five non-empty, interpretable segments; the smallest is 2.18% and the largest is 34.42% in the evaluation sample. Across seeds 42, 52, and 62, pairwise adjusted Rand indices range from 0.9979 to 0.9989.
 
-### Reducing to a workable space
+### Segment profiles
 
-K-Means and hierarchical grouping both work on distance, which loses its meaning in 47 dimensions. So they run on a compressed version of the data that keeps ten components, the practical ceiling for a distance-based method, capturing over half the useful variation while staying compact enough that Euclidean distance still means something. The number is not arbitrary: a scree chart shows each further component adding only a sliver of variance by that point, so an eleventh would buy almost nothing.
+| Segment | Applications | Median income | Median credit | Credit/income | Annuity/income | Median installment late share |
+|---|---:|---:|---:|---:|---:|---:|
+| Intensive Card User | 54,535 | 157,500 | 544,491 | 3.26x | 15.66% | 3.98% |
+| Repayment-Stress History | 7,637 | 135,000 | 497,520 | 3.36x | 17.32% | 28.57% |
+| Thin-File / Low-Intensity | 121,820 | 135,000 | 269,550 | 2.11x | 13.17% | 0.00% observed median |
+| High-Exposure Applicant | 119,937 | 157,500 | 814,041 | 5.27x | 21.97% | 0.00% observed median |
+| History-Rich Credit User | 52,326 | 166,500 | 454,500 | 2.67x | 14.52% | 5.08% |
 
-The density-based method (DBSCAN) is handled differently. Distance-based compression flattens tight groups, so DBSCAN on that space tends to see one undifferentiated mass. Instead it runs on a two-dimensional layout that preserves the local neighbourhood structure of the data, so tight groups stay tight and genuinely isolated applicants get pushed to the edge. Its radius is chosen automatically from the data itself.
+These names describe dominant portfolio geometry. They are not character judgments or decision labels.
 
-### Choosing the number of groups
+- Intensive Card User: review utilization, balances, arrears, and limit suitability before changing exposure.
+- Repayment-Stress History: review lateness recency, severity, cure status, and current affordability. Existing hardship actions must follow policy.
+- Thin-File / Low-Intensity: distinguish absent information from good behavior and request permitted alternative evidence when needed.
+- High-Exposure Applicant: verify sustainable income, total obligations, and stressed affordability.
+- History-Rich Credit User: use the larger history to reconcile current obligations; do not assume current capacity from depth alone.
 
-We tested from two to ten groups using both an elbow chart and a separation score. The separation peaks at two groups, but two segments are too coarse for any business decision. The elbow points to five, and among the genuinely useful options (three or more groups) five has the best separation. So five is both justified by the data and actionable for the business.
+### DBSCAN and hierarchical sensitivity
 
-### The five customer segments
+DBSCAN is run on a reproducible, distribution-checked 50,000-row UMAP sample. It marks 914 points as density noise. UMAP can distort global distance and density, so this result is an exploratory view, not a full-population default, fraud, or anomaly label.
 
-The grouping is driven by financial behaviour, not demographics. The strongest differences come from repayment history, loan size relative to income, and card usage, not from age or gender.
+Ward linkage is fit on a sample, then extended by nearest-center assignment. Its agreement with K-Means is ARI 0.719 and NMI 0.726. This is useful corroboration, but not proof that the methods found the same partition.
 
-| Segment | Share | What sets it apart | Actual default rate |
-|---|---|---|---|
-| Minimal Borrower | about 36% | small loans, short terms, light repayment burden | 8.4% |
-| Ambitious Borrower | about 35% | large loans relative to income, usually newer borrowers | 6.1% |
-| Active Veteran | about 13% | a dense history of applications, often rejected | 9.2% |
-| Troubled Borrower | about 1% | severe repayment delays across every product | 11.4% |
-| Intensive Card User | about 15% | card usage two to three times the average | 10.8% |
+## Phase 3: association rules
 
-The portfolio default rate is 8.1 percent.
+The transaction vocabulary uses domain bins for income, requested credit, leverage, repayment burden, external-score availability, installment behavior, card utilization, bureau depth/debt, previous-application depth/outcome, and cluster membership.
 
-### Three methods, checked against each other
+Rules use a maximum itemset length of three and a single consequent. Every exported rule includes support count, support, confidence, lift, and the correct population denominator. Global Apriori, FP-Growth, and ECLAT agreement is compared only on the same full-portfolio transactions. Per-segment FP-Growth is labeled separately.
 
-We did not rely on a single algorithm. K-Means builds the main segments. Ward hierarchical grouping, which builds the data up like a family tree, checked it independently and reached a similar structure (agreement score around 0.55 out of 1). The density-based method found about 30 tight pockets and set aside roughly 2 percent of applicants as isolated cases, which then went into the anomaly review. Three very different ways of looking at the data pointing at a similar structure is good reason to trust the five segments.
+The final table contains 15 rules, three per segment. The selection rejects:
 
-### Naming is a human job
+- purely algebraic income/credit/leverage/burden identities;
+- same-source missingness identities such as `previous_none -> previous_outcome_not_observed`;
+- compactness violations and rules without behavior or history context; and
+- near-duplicate displays with the same antecedent.
 
-The algorithm only finds the grouping. A person reads the top distinguishing features of each group and gives it a name, a risk level, and a recommendation grounded in domain knowledge. Those names are saved so every later step and the dashboard reads them, rather than relying on a numbering that can change between runs.
+High-lift thin-file rules are data-availability findings. They show that missing histories co-occur across independent tables; they do not show clean repayment. Behavioral rules cover card utilization, serious lateness, prior refusals, leverage, and burden. The dashboard links each displayed rule to a review action rather than treating lift as a decline rule.
 
----
+## Phase 4: anomaly review
 
-## Patterns and behaviour rules
+Six signals are available across the workflow: adjusted IQR, empirical Z-score, Mahalanobis distance, Isolation Forest, Local Outlier Factor, and sampled DBSCAN noise. Only the 50,000 DBSCAN sample has all six; other rows have five. The agreement denominator is therefore record-specific.
 
-### Turning numbers into categories
+| Category | Records | Share of portfolio |
+|---|---:|---:|
+| Detector consensus, at least 3 signals and at least 50% agreement | 3,758 | 1.05% |
+| Moderate, 2 signals | 5,431 | 1.52% |
+| Weak, 1 signal | 20,532 | 5.76% |
+| No detector flag | 326,534 | 91.66% |
 
-Behaviour rules work on categories, so the continuous features are binned into equal-sized groups. Simple features get three bins (low, medium, high); income gets four. Each applicant's segment is added as one more item, so rules can connect behaviour to segment membership.
+DBSCAN corroborates 22 consensus records. "Consensus" refers to unusualness agreement, not a calibrated probability of default.
 
-### Three methods, one answer
+Each of the 3,758 review rows contains the applicant ID, actual evidence values, value basis, primary and supporting drivers, business interpretation, review priority, and a specific next action. All rows state `Automatic Decision Allowed = No`.
 
-Three well-established rule-finding algorithms all ran on the same data. They work in completely different ways and they found the same 1,204 rules. When three different methods agree, a rule is almost certainly real and not an artefact of one technique. We kept rules with a strength ratio of at least 1.2 and a reliability of at least 35 percent, then removed near-duplicates and kept the strongest few per segment. That leaves 15 final rules, with strength ratios from about 1.8 to 4.6.
+Threshold sensitivity is material. Conventional 1.5x IQR flags 67,522 rows, while the adjusted multicolumn IQR rule flags 1,158. Isolation Forest ranges from 3,563 to 35,626 flags as contamination moves from 1% to 10%. These differences are why detector agreement and human evidence review are required.
 
-### What the rules say
+## Outcome alignment and the low precision question
 
-The most useful patterns are simple to state. A small loan with a heavy repayment burden almost always points to low income (reliability above 98 percent), which is the signature of a cash-poor customer who is credit-hungry: a small loan is not automatically a safe one. Senior applicants in the Minimal segment with a heavy burden very likely fit that same pattern, which suggests micro-credit plus financial education rather than rejection. And very high income inside the Ambitious segment goes with large loans, confirming that big loans concentrate among people who can carry them.
+### Cluster outcome alignment
 
-One rule deserves particular attention: the Troubled segment has an internal pattern with reliability around 99 percent, which means this segment's behaviour is so consistent that it can be built directly into a lending early-warning filter.
+The cluster diagnostic uses five out-of-fold splits. For each fold, train-only segment rates are learned from the other four folds and compared with that fold's baseline. Test IDs are excluded.
 
----
+| Metric | Verified result |
+|---|---:|
+| Evaluation rows | 307,511 |
+| Flagged share | 17.38% |
+| Precision | 10.83% |
+| Recall | 23.33% |
+| Lift over 8.07% base rate | 1.34x |
+| Average precision | 9.53% |
+| ROC AUC | 0.557 |
+| True positive / false positive | 5,791 / 47,657 |
+| False negative / true negative | 19,034 / 235,029 |
 
-## Anomaly detection and investigation
+The full-segment precision ceiling is 11.91%, the highest observed default rate among complete segments. This is the central reason cluster precision stays low: every member of a selected segment receives the same broad risk treatment even though most members did not default.
 
-### Six detectors, because unusual is not one concept
+### Objective-matched supervised diagnostic
 
-Every application is scored by six signals that each define "unusual" differently. Two read one column at a time: the robust view uses a skew-adjusted boxplot fence (Hubert and Vandervieren, 2008) rather than a flat multiplier, because income, credit amount, and annuity are right-skewed by construction and a symmetric fence would either punish the legitimate high tail or ignore a genuinely wrong low value. Its fence multiplier is calibrated separately for every column, by searching for the value that makes each column flag close to a fixed 1 percent of its own applicants, rather than reusing one textbook constant everywhere; a fixed search boundary was not always wide enough (a column whose typical values sit within a hair of the median, with a long thin tail beyond, needs a far larger multiplier), so the search expands its own boundary until it is demonstrably sufficient. It also runs only on genuinely continuous columns, and it abstains on any column whose middle 50 percent collapses onto one shared value, such as zero card utilisation for applicants with no card, rather than flagging every ordinary customer who differs from that shared value. This mattered in practice: an earlier, unguarded version of this check, using one flat multiplier for every column, flagged 56.5 percent of the portfolio; restricting it to continuous columns and calibrating the fence per column brought it to 0.4 percent, in line with the rest of the ensemble. The sensitive complement (Z-score) is kept deliberately unadjusted for skew as a naive baseline, calibrated to the same 1 percent target rate, and comparing the two is itself part of the evidence for why the skew adjustment is needed. Both single-column checks are openly blind to combinations, which is why four additional signals join them.
+A separate logistic regression uses five-fold out-of-fold train predictions and the same 17.38% review share. Direct age, education, income-type frequency, organization-type frequency, and region-rating proxies are excluded from this diagnostic. This is a methodological reference, not a deployment model.
 
-One signal is combination-aware (Mahalanobis distance): it measures how far a row sits from the bulk along the natural correlations of the data, so it catches an applicant whose income and loan amount are each ordinary but wrong together. An important calibration note: the standard textbook threshold for this signal would flag a third of the entire portfolio, which is a sign that the data does not follow a perfect bell curve rather than a sign that a third of applicants are unusual. The notebook demonstrates that failure, then uses the top 2.5 percent of scores instead, keeping the flag rate in the same range as the other signals.
+| Metric | Logistic diagnostic |
+|---|---:|
+| Precision | 21.75% |
+| Recall | 46.84% |
+| Lift | 2.69x |
+| Average precision | 23.33% |
+| ROC AUC | 0.751 |
+| Brier score | 0.0683 |
 
-A fourth signal (Isolation Forest) uses random partitioning to isolate easy-to-separate rows quickly, with no assumption about the shape of the data, catching non-linear pockets that no single threshold can describe. A fifth (Local Outlier Factor) asks whether an applicant's neighbourhood is sparser than its neighbours' own neighbourhoods, a local, relative comparison rather than one fixed density rule for the whole portfolio, also calibrated at the top 2.5 percent of scores. The sixth is an independent density-based check from the segmentation step (DBSCAN), which applies one fixed density rule to the whole portfolio and is computed with different machinery in a different part of the process; paired with the local, relative view of the fifth signal, the two density checks cover both a global and a local notion of "too sparse to belong."
+The improvement confirms an objective mismatch. Clustering still has value for portfolio strategy, communication, and review design. It should not be used as the applicant-level default model.
 
-A record flagged by three or more of the six is a high-confidence anomaly. There are 2,404 of them, which is 0.7 percent of the portfolio.
+## Governance and statistical interpretation
 
-### Two labels per anomaly: what kind, and what to do (and why the first type is not called an outlier)
+The verifier checks Simpson's paradox, ecological fallacy, Berkson's paradox, collider bias, base-rate neglect, regression to the mean, survivorship bias, the look-elsewhere effect, the garden of forking paths, causation, and reverse causality.
 
-A flat list of unusual cases is not actionable, so each high-confidence case gets two labels, and the two labels answer two different questions on purpose.
+The main unresolved limits are straightforward:
 
-The first classifies how the case deviates statistically. A global anomaly is extreme against the whole population. There are 2,013 of these. A contextual anomaly looks fine in general but stands out sharply within its own customer group, like heavy card use in the Minimal segment. There are 354 of these, and they are the most valuable to investigate as risk signals. A collective anomaly is part of a small group of customers who together sit apart from the main population. There are 37, watched as a recurring pattern rather than a one-off.
+- The public extract does not contain product, market, or calendar strata for a full Simpson reversal test.
+- Home Credit's applicant-selection mechanism is unknown, so results cannot be generalized to all consumers.
+- Association rules are exploratory and do not have a multiplicity-adjusted external holdout.
+- No intervention data support causal claims.
+- A deployable predictive model would still need temporal validation, calibration, cost-sensitive thresholding, fairness analysis, governance approval, and drift monitoring.
 
-The second label says what the deviation most likely means in business terms, and this is where the case is never described as an outlier if the honest reading is a data problem. Data quality issues (1,616 cases): a figure deviates by more than 50 times its segment's typical value, a magnitude no real customer's finances produce; the far more honest reading is a recording mistake, a unit mismatch, or an unhandled placeholder value, so the record is routed to data verification rather than treated as a risk finding. Rare but valid cases (671 cases): extreme yet internally consistent, a genuine if uncommon profile, routed to appropriate handling rather than rejected. Risk signals (117 cases): a contradictory financial combination such as low income paired with a large loan, requiring manual credit review. Every case carries a real applicant ID, and the business impact and recommendation attached to each one are a short, one-line summary generated from that record's own data, not from a fixed template, so the operations team can see at a glance what actually makes that specific application unusual.
+## Reproducibility
 
----
+Run from the project root:
 
-## The dashboard
+```powershell
+python src/run_pipeline.py
+python scripts/update_analysis_notebooks.py
+python scripts/execute_notebook.py notebooks/exploratory_data_analysis.ipynb --timeout 900
+python scripts/execute_notebook.py notebooks/phase2_clustering.ipynb --timeout 1200
+python scripts/execute_notebook.py notebooks/phase3_association.ipynb --timeout 1200
+python scripts/execute_notebook.py notebooks/phase4_anomaly.ipynb --timeout 1800
+python scripts/validate_end_to_end.py
+python dashboard/app.py
+```
 
-The dashboard presents all of this for a business reader. It reads every number from the result files, so re-running the analysis keeps it in sync, and all technical column names are translated into plain language throughout. The header and headline numbers change with the section being viewed, so what is shown always matches what that section is about. A sidebar navigates six sections: the executive summary, the initial data condition, the segments with per-segment recommendations, the behaviour rules, the anomalies with the six-detector comparison, and the methodology.
+The verification outputs are in `results/validation/`. `material_passport.json` records the eight raw-file hashes, software environment, row contracts, and artifact lineage. `verification_summary.json` reports `VERIFIED`, 68 checks, 67 passes, one warning, and zero failures.
 
----
+## Final interpretation
 
-## Does the structure capture real risk?
-
-This is the honesty test for the whole study. The segments and anomalies were built without the default label. Only afterwards did we open the real outcomes and measure them. If the grouping were arbitrary, every group would default near the 8.1 percent average. Instead the numbers spread out cleanly and rise in order.
-
-By segment: Ambitious 6.1 percent, Minimal 8.5 percent, Active Veteran 9.2 percent, Intensive Card User 10.8 percent, Troubled 11.4 percent.
-
-By anomaly level, the default rate climbs without a single exception from untouched applications through every tier that carries a signal: normal 7.7 percent, weak signal 11.3 percent, moderate 12.9 percent, high confidence 13.6 percent. One number is reported honestly rather than folded into a tidy story: among the three business types, risk signal (12.3 percent) does not come out highest, rare but valid (14.2 percent) does, though the risk-signal group is only 106 applicants with a known outcome, too small a sample to draw a reliable ranking from. What holds cleanly is the comparison that matters most: every tier and every business type defaults well above the 8.1 percent baseline, and the tier gradient climbs in strict order.
-
-A clean, consistent gradient from methods that never saw the label is strong evidence that the structure is real, not a statistical accident.
-
----
-
-## Recommendations by segment
-
-**Minimal Borrower: a volume engine.** Serve many customers, automate the decisions, keep costs low. Micro-credit and short-term products are the right fit, and financial education grows these customers into more valuable relationships over time. The profit comes from scale and efficiency, not margin per customer.
-
-**Ambitious Borrower: a growth engine, but with a safety check.** This is where the healthiest growth sits, since the lowest default rate proves the existing screening already works well. Push mortgages and vehicle loans toward this segment, and protect the larger exposures with an income stress test (can they still pay if income drops 20 to 30 percent?) and with credit insurance.
-
-**Active Veteran: investigate before deciding.** A dense history of rejections is a yellow flag, not a red one. Understanding why they were refused previously prevents two costly mistakes at once: turning away a good customer and accepting an over-extended one. Tighten the debt-to-income check and steer toward secured products that use their long relationship with the bank.
-
-**Troubled Borrower: protect the balance sheet.** Only one percent of the portfolio but the densest concentration of loss. For new applications, decline or require collateral; for existing customers, offer restructuring before the arrears deepen further. The biggest value here is using their consistent behaviour pattern as an early-warning filter on incoming applications.
-
-**Intensive Card User: relieve the pressure before it breaks.** These customers live on their cards at two to three times average usage. They manage while income flows, but an income shock can cascade into defaults across every product at once. Monitor card usage, offer debt consolidation to bring the revolving balance down, and hold limit increases until usage falls below 70 percent.
-
-Across all segments, the anomaly score is worth adding as an extra screening layer alongside the conventional credit score, since it tracks real default in a graded and proven way.
-
----
-
-## How to run
-
-Install the dependencies from `requirements.txt`, then run the steps in order. The first step is a pipeline script; the middle steps are notebooks executed in sequence; the final step is the dashboard (`python dashboard/app.py`, then open the local address it prints).
-
-The cluster numbering is not fixed between runs, so always read the segments by name from the saved naming file rather than by number. All random seeds are fixed at 42, so the groupings themselves are stable.
+The corrected process is sound for knowledge discovery. It finds stable and usable portfolio segments, denominator-safe association patterns, and a conservative record-level anomaly queue. It also gives a clear negative result: cluster membership is not accurate enough for individual default decisions. That boundary is part of the analysis, not a defect to hide.

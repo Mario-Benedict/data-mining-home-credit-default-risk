@@ -66,6 +66,9 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
     # Log transforms
     for col in LOG_TRANSFORM_COLS:
         if col in df.columns:
+            source_col = f"SOURCE_{col}"
+            if source_col not in df.columns:
+                df[source_col] = df[col]
             df[col] = np.log1p(df[col].clip(lower=0))
             log(f"  log1p({col})")
 
