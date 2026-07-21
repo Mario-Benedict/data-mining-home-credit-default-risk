@@ -1,6 +1,6 @@
 :root {
   --ink: #173647;
-  --muted: #607783;
+  --muted: #526a76;
   --line: #dbe5ea;
   --surface: #ffffff;
   --canvas: #f5f8f9;
@@ -125,6 +125,7 @@ body { margin: 0; background: var(--canvas); color: var(--ink); }
 .plot-compact { --plot-height: 310px; }
 .plot-standard { --plot-height: 380px; }
 .plot-tall { --plot-height: 455px; }
+.plot-profile { --plot-height: 600px; }
 .plot-map { --plot-height: 440px; }
 
 .segment-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 11px; }
@@ -221,6 +222,7 @@ footer { display: flex; justify-content: space-between; gap: 16px; padding: 24px
   .plot-compact { --plot-height: 275px; }
   .plot-standard { --plot-height: 325px; }
   .plot-tall { --plot-height: 365px; }
+  .plot-profile { --plot-height: 560px; }
   .plot-map { --plot-height: 365px; }
   .segment-grid { grid-template-columns: 1fr; }
   .segment-card > p { min-height: 0; }

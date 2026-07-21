@@ -44,6 +44,25 @@ METHOD_COLUMNS = {
     "IS_OUTLIER": "DBSCAN noise",
 }
 
+EVIDENCE_FEATURE_LABELS = {
+    "AMT_INCOME_TOTAL": "reported income",
+    "AMT_CREDIT": "requested credit",
+    "AMT_ANNUITY": "annuity amount",
+    "CREDIT_TO_INCOME": "credit-to-income ratio",
+    "ANNUITY_TO_INCOME": "annuity-to-income ratio",
+    "CREDIT_TERM_MONTHS": "estimated credit term",
+    "BUREAU_COUNT": "bureau record count",
+    "BUREAU_DEBT_TO_CREDIT_RATIO": "bureau debt-to-credit ratio",
+    "PREV_COUNT": "previous application count",
+    "INST_DPD_MAX": "longest instalment delay",
+    "INST_LATE_RATIO": "late-instalment share",
+    "INST_PAYMENT_RATIO_MEAN": "average payment-to-due ratio",
+    "INST_COUNT": "instalment record count",
+    "CC_UTILIZATION_MEAN": "average card utilisation",
+    "CC_UTILIZATION_MAX": "maximum card utilisation",
+    "CC_AMT_BALANCE_MEAN": "average card balance",
+}
+
 
 @dataclass(frozen=True)
 class Evidence:
@@ -85,6 +104,27 @@ def _pct(value: float, digits: int = 1) -> str:
 
 def _num(value: float, digits: int = 2) -> str:
     return "missing" if not _present(value) else f"{value:,.{digits}f}"
+
+
+def _as_sentence(value: str) -> str:
+    text = str(value).strip()
+    if not text:
+        return ""
+    text = text[0].upper() + text[1:]
+    return text if text.endswith((".", "!", "?")) else f"{text}."
+
+
+def _join_sentences(values: Iterable[str]) -> str:
+    return " ".join(_as_sentence(value) for value in values if str(value).strip())
+
+
+def _natural_join(values: Iterable[str]) -> str:
+    items = list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
+    if len(items) < 2:
+        return items[0] if items else ""
+    if len(items) == 2:
+        return " and ".join(items)
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
 
 
 def _methods_fired(row: pd.Series) -> list[str]:
@@ -139,35 +179,35 @@ def _logical_data_checks(row: pd.Series) -> list[Evidence]:
             issues.append(Evidence(
                 "Non-positive financial amount", 3,
                 f"{label} is {_num(value)}, although this field should be positive",
-                f"reconcile the {label} with the source application before any underwriting use",
+                f"check the {label} against the original application before using it",
                 "Data Operations",
             ))
 
     if _present(age) and not 18 <= age <= 100:
         issues.append(Evidence(
             "Implausible age", 3, f"recorded age is {_num(age, 1)} years",
-            "verify the birth-date transformation and original application document",
+            "check the birth date in the original application and confirm that the age was calculated correctly",
             "Data Operations",
         ))
     if _present(age) and _present(employed) and employed > max(age - 14, 0) + 0.5:
         issues.append(Evidence(
             "Employment history exceeds feasible working life", 3,
             f"employment tenure is {_num(employed, 1)} years for age {_num(age, 1)}",
-            "reconcile employment start date and sentinel handling with the source record",
+            "check the employment start date and any placeholder value against the source record",
             "Data Operations",
         ))
     if _present(term) and (term <= 0 or term > 600):
         issues.append(Evidence(
             "Implausible implied term", 3,
             f"credit divided by annuity implies {_num(term, 1)} payment periods",
-            "verify credit and annuity units and the contracted repayment schedule",
+            "check the credit and annuity units against the contracted repayment schedule",
             "Data Operations",
         ))
     if _present(payment_ratio) and (payment_ratio < 0 or payment_ratio > 3):
         issues.append(Evidence(
-            "Installment ratio needs reconciliation", 2,
+            "Payment ratio needs checking", 2,
             f"mean paid-to-due ratio is {_num(payment_ratio, 2)}x",
-            "check reversals, prepayments, duplicated installments, and currency units",
+            "check for reversals, early payments, duplicate instalments, and inconsistent currency units",
             "Data Operations",
         ))
 
@@ -177,7 +217,7 @@ def _logical_data_checks(row: pd.Series) -> list[Evidence]:
             issues.append(Evidence(
                 "External score outside expected range", 3,
                 f"{col} is {_num(value, 3)} rather than a value from 0 to 1",
-                f"reconcile {col} with the score provider or preprocessing record",
+                f"check {col} against the score provider or preprocessing record",
                 "Data Operations",
             ))
     return issues
@@ -215,77 +255,77 @@ def _repayment_risk_evidence(row: pd.Series) -> list[Evidence]:
     if _present(ati) and ati >= 0.35:
         severity = 3 if ati >= 0.50 else 2
         signals.append(Evidence(
-            "High repayment burden", severity,
-            f"annuity is {_pct(ati)} of reported income",
-            "verify sustainable income and run an affordability stress scenario before changing exposure",
+            "High payment burden", severity,
+            f"scheduled annuity equals {_pct(ati)} of reported income",
+            "confirm sustainable income and check whether the payments still work if income falls",
             "Senior Underwriter",
         ))
     if _present(cti) and cti >= 6:
         severity = 3 if cti >= 8 else 2
         signals.append(Evidence(
-            "High credit-to-income leverage", severity,
-            f"requested credit is {_num(cti, 1)}x reported income",
-            "reconcile all current obligations and test repayment capacity under lower income",
+            "High credit compared with income", severity,
+            f"requested credit equals {_num(cti, 1)} times reported income",
+            "confirm all current obligations and check whether the applicant could still pay if income falls",
             "Senior Underwriter",
         ))
     if _present(inst_max) and inst_max > 30:
         severity = 3 if inst_max >= 90 else 2
         signals.append(Evidence(
-            "Material installment delinquency", severity,
-            f"maximum observed installment delay is {_num(inst_max, 0)} days",
-            "review the payment timeline and, for an existing customer in hardship, assess contact or restructuring under policy",
+            "Long instalment delay", severity,
+            f"the longest observed instalment delay is {_num(inst_max, 0)} days",
+            "review the payment timeline. If the customer is already in hardship, follow the contact or restructuring policy",
             "Credit Review / Customer Assistance",
         ))
     if _present(severe_late) and severe_late >= 0.05:
         signals.append(Evidence(
-            "Repeated severe installment lateness", 3,
-            f"{_pct(severe_late)} of observed installments were more than 30 days late",
-            "review recurrence, recency, and any cure before taking a credit action",
+            "Repeated severe instalment delays", 3,
+            f"{_pct(severe_late)} of observed instalments were more than 30 days late",
+            "check how often the delays happened, how recent they were, and whether the account was brought up to date",
             "Credit Review / Customer Assistance",
         ))
     elif _present(late) and late >= 0.20:
         signals.append(Evidence(
-            "Frequent installment lateness", 2,
-            f"{_pct(late)} of observed installments were late",
-            "review lateness recency and causes and confirm the proposed payment schedule is affordable",
+            "Frequent instalment delays", 2,
+            f"{_pct(late)} of observed instalments were late",
+            "check when and why the late payments happened, then confirm that the proposed schedule is affordable",
             "Credit Review",
         ))
     if _present(pay_ratio) and 0 <= pay_ratio < 0.90:
         signals.append(Evidence(
-            "Persistent underpayment", 2,
-            f"mean paid amount is {_pct(pay_ratio)} of the amount due",
-            "reconcile partial payments and unresolved balances before increasing exposure",
+            "Repeated underpayment", 2,
+            f"the average payment is {_pct(pay_ratio)} of the amount due",
+            "check partial payments and unresolved balances before increasing exposure",
             "Credit Review",
         ))
     if (_present(util_mean) and util_mean >= 0.80) or (_present(util_max) and util_max >= 1.0):
         evidence = (
-            f"mean card utilisation is {_pct(util_mean)} and maximum is {_pct(util_max)}"
+            f"average card utilisation is {_pct(util_mean)} and the maximum is {_pct(util_max)}"
         )
         signals.append(Evidence(
-            "High revolving-credit utilisation", 2, evidence,
-            "review current card balances, payment capacity, and limit suitability; do not infer distress from utilisation alone",
+            "High card utilisation", 2, evidence,
+            "check card balances, payment capacity, and whether the limit still fits. High utilisation alone does not prove financial distress",
             "Revolving Credit Review",
         ))
     max_dpd = np.nanmax([cc_dpd, pos_dpd]) if any(_present(v) for v in [cc_dpd, pos_dpd]) else np.nan
     if _present(max_dpd) and max_dpd > 0:
         signals.append(Evidence(
-            "Current product delinquency signal", 2,
-            f"mean days-past-due signal reaches {_num(max_dpd, 1)} days across card/POS history",
-            "inspect recency and product-level arrears before changing exposure",
+            "Card or POS arrears", 2,
+            f"average days past due reaches {_num(max_dpd, 1)} days across card or POS history",
+            "check how recent the card or POS arrears are before changing exposure",
             "Credit Review",
         ))
     if _present(bureau_debt) and bureau_debt >= 0.80:
         signals.append(Evidence(
-            "High external debt utilisation", 2,
+            "High bureau debt utilisation", 2,
             f"bureau debt is {_pct(bureau_debt)} of recorded bureau credit",
-            "reconcile outstanding external obligations and include them in the affordability calculation",
+            "confirm outstanding external debts and include them in the affordability calculation",
             "Senior Underwriter",
         ))
     if (_present(bureau_severe) and bureau_severe >= 0.02) or (_present(bureau_dpd) and bureau_dpd >= 0.10):
         signals.append(Evidence(
-            "External delinquency history", 3,
-            f"bureau months show {_pct(bureau_dpd)} any-DPD and {_pct(bureau_severe)} severe-DPD",
-            "verify bureau recency, dispute status, and cure information before relying on the signal",
+            "Late payments in bureau history", 3,
+            f"bureau history shows {_pct(bureau_dpd)} of months with a late payment and {_pct(bureau_severe)} with a severe late payment",
+            "check how recent the bureau arrears are, whether they are disputed, and whether they were cured",
             "Credit Review",
         ))
 
@@ -299,16 +339,16 @@ def _repayment_risk_evidence(row: pd.Series) -> list[Evidence]:
             ext_values.append(value)
     if ext_values and np.mean(ext_values) < 0.30:
         signals.append(Evidence(
-            "Weak combined external score", 2,
-            f"mean available external score is {_num(float(np.mean(ext_values)), 3)}",
-            "review the underlying bureau information and use specific verified reasons rather than the score alone",
+            "Low combined external score", 2,
+            f"the average available external score is {_num(float(np.mean(ext_values)), 3)}",
+            "check the underlying bureau information. Do not rely on the combined score by itself",
             "Senior Underwriter",
         ))
     if _present(prev_refused) and prev_refused >= 3 and _present(approval) and approval < 0.50:
         signals.append(Evidence(
-            "Repeated prior refusals", 1,
+            "Repeated previous application refusals", 1,
             f"{_num(prev_refused, 0)} prior applications were refused and historical approval rate is {_pct(approval)}",
-            "reconcile the earlier refusal reasons and confirm whether they remain current",
+            "check why earlier applications were refused and whether those reasons still apply",
             "Credit Review",
         ))
     return signals
@@ -335,10 +375,11 @@ def _rare_profile_evidence(
 
     evidence = []
     for score, col, value, median in candidates[:top_n]:
+        label = EVIDENCE_FEATURE_LABELS.get(col, col.replace("_", " ").lower())
         evidence.append(Evidence(
-            f"Unusual {col}", 1,
-            f"{col} is {_num(value)} versus segment median {_num(median)} ({score:.1f} robust deviations)",
-            f"confirm {col} from the normal source document and otherwise keep the case in the standard underwriting path",
+            f"Unusual {label}", 1,
+            f"{label} is {_num(value)} compared with the cluster median of {_num(median)} ({score:.1f} robust deviations)",
+            f"check {label} against its usual source. If it is correct, continue with standard underwriting",
             "Standard Underwriting",
         ))
     return evidence
@@ -389,27 +430,27 @@ def build_anomaly_investigation(
             review_type = "Data consistency check"
             evidence = sorted(data_issues, key=lambda x: x.severity, reverse=True)
             interpretation = (
-                "The record contains a logical or unit inconsistency. This is a data-governance issue, "
-                "not evidence that the applicant will default."
+                "One or more values conflict with their expected range or units. Confirm the source data before using this record. "
+                "The anomaly is a data-quality issue, not evidence of default."
             )
         elif risk_signals:
             review_type = "Affordability / repayment review"
             evidence = sorted(risk_signals, key=lambda x: x.severity, reverse=True)
             interpretation = (
-                "The unusual pattern is supported by repayment-capacity or delinquency evidence. "
-                "It warrants a specific manual review, not an automatic adverse action."
+                "The record contains a specific affordability or repayment concern. A reviewer should check the underlying history "
+                "and the applicant's current circumstances before any credit action."
             )
         else:
             review_type = "Rare but plausible profile"
             evidence = rare_signals or [Evidence(
-                "Multivariate rarity", 1,
-                "the combination is unusual although no single policy-relevant risk threshold is breached",
-                "confirm the unusual fields and otherwise continue through the standard underwriting path",
+                "Unusual combination", 1,
+                "the combination is unusual, although no affordability, repayment, or data-quality threshold was triggered",
+                "check the unusual values. If they are correct, continue with standard underwriting",
                 "Standard Underwriting",
             )]
             interpretation = (
-                "The applicant is statistically unusual but has no identified affordability, delinquency, "
-                "or logical-data breach. Rarity alone is not a credit-risk conclusion."
+                "The record is unusual for its cluster, but no affordability, repayment, or data-quality threshold was triggered. "
+                "Check the unusual values, then continue with standard review if they are correct."
             )
 
         top = evidence[:3]
@@ -435,14 +476,15 @@ def build_anomaly_investigation(
             else "Targeted human review" if max_severity == 2
             else "Standard review"
         )
-        actual_evidence = "; ".join(e.evidence for e in top)
+        actual_evidence = _join_sentences(e.evidence for e in top)
         actions = []
         for e in top:
             if e.action not in actions:
                 actions.append(e.action)
         recommendation = (
-            f"For applicant {int(row['SK_ID_CURR'])}: because {actual_evidence}, "
-            f"{'; then '.join(actions)}. Record the verified, specific reason; do not use cluster membership alone."
+            f"Applicant {int(row['SK_ID_CURR'])}: {_join_sentences(actions)} "
+            "Document the facts confirmed during review. Base any credit action on those facts, "
+            "not the anomaly or cluster label."
         )
         owner_parts = [
             owner.strip()
@@ -450,7 +492,7 @@ def build_anomaly_investigation(
             for owner in evidence.owner.split(" / ")
             if owner.strip()
         ]
-        owners = " / ".join(dict.fromkeys(owner_parts))
+        owners = _natural_join(owner_parts)
 
         output = {
             "ROW_ID": int(row["ROW_ID"]),
@@ -468,7 +510,7 @@ def build_anomaly_investigation(
             "Recommended Action": recommendation,
             "Review Owner": owners,
             "Automatic Decision Allowed": "No",
-            "Evidence Value Basis": "Preserved source values where available; observed history aggregates otherwise",
+            "Evidence Value Basis": "Uses original source values where available and observed history summaries otherwise",
         }
         rows.append(output)
         for item in evidence:
