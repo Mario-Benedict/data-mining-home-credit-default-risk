@@ -1,5 +1,5 @@
 """
-Step 8 - Encode categoricals into a fully numeric, clustering-ready frame.
+Encode categoricals into a fully numeric, clustering-ready frame.
 
 The guiding question for every column here is NOT "how do we make it numeric"
 but "how do we make it numeric WITHOUT distorting Euclidean distance", because
@@ -92,5 +92,5 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
         df = df.drop(columns=drop_obj)
         log(f"  Dropped {len(drop_obj)} unused categoricals: {drop_obj}")
 
-    log_shape("step8_out", df)
+    log_shape("encode_categoricals", df)
     return df

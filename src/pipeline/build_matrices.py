@@ -1,8 +1,20 @@
 """
-Step 9 - Feature selection, business-value export, NaN fill, and scaling.
+Build the three output matrices.
 
-1. Select  - keep SK_ID_CURR (identifier) + the CLUSTERING_FEATURES that exist
-             + the ordinal DEF_30 social-circle bin.
+This is where one prepared table becomes three deliberately different views of
+the same applicants. Each downstream phase needs a different trade-off, and
+serving them all from one matrix is what caused defect F2 (see REPORT.md 1b):
+
+  - features_business.csv   readable values and audit trail, for explaining a
+                            case to a human. Never used for distance maths.
+  - features_clustering.csv clipped and standardized, so a handful of extreme
+                            files cannot capture K-Means centroids.
+  - features_anomaly.csv    the same columns standardized WITHOUT clipping,
+                            because a truncated axis cannot contain an outlier.
+
+1. Select  - keep SK_ID_CURR (identifier) + the CLUSTERING_FEATURES that exist.
+             Protected and proxy attributes are routed to the business artifact
+             only, so they can describe a segment but never form one.
 2. Fill    - residual NaN -> 0  (YEARS_EMPLOYED is NaN for sentinel rows;
              FLAG_SENTINEL_EMPLOYED already encodes that, so 0 is correct).
 3. Scale   - StandardScaler on everything EXCEPT true {0,1} binary flags.
@@ -41,17 +53,29 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
     if missing_base:
         log(f"  WARNING - expected features not found (skipped): {missing_base}", "WARN")
 
-    # DEF_30_CNT_SOCIAL_CIRCLE_BIN is ordinal-encoded (int), kept alongside.
-    extra_encoded = [c for c in ["DEF_30_CNT_SOCIAL_CIRCLE_BIN"] if c in df.columns]
+    # DEF_30_CNT_SOCIAL_CIRCLE_BIN used to be appended to the mining matrix here.
+    # It is now profile-only: an applicant's acquaintances' arrears are not the
+    # applicant's own conduct, and letting it shape a segment is guilt by
+    # association. See the protected-attribute note in config.CLUSTERING_FEATURES.
+    extra_encoded: list[str] = []
 
     select_cols = base_cols + extra_encoded
+
+    # Attributes excluded from segmentation but still needed to DESCRIBE the
+    # segments afterwards and to run fairness monitoring. They must reach the
+    # business artifact even though they never enter a distance calculation.
+    PROFILE_ONLY_COLS = [
+        "YEARS_BIRTH", "CNT_CHILDREN", "REGION_RATING_CLIENT_W_CITY",
+        "NAME_EDUCATION_TYPE", "NAME_INCOME_TYPE_FREQ", "ORGANIZATION_TYPE_FREQ",
+        "DEF_30_CNT_SOCIAL_CIRCLE_BIN", "CODE_GENDER",
+    ]
 
     # Save a separate business-readable contract before filling/scaling. The
     # mining matrix is intentionally standardized; explanations and policy
     # thresholds must never be calculated from those z-score-like values.
     audit_cols = [c for c in df.columns if c.startswith("SOURCE_")]
     business_cols = select_cols + [
-        c for c in ["GOODS_TO_CREDIT"] + audit_cols
+        c for c in ["GOODS_TO_CREDIT"] + PROFILE_ONLY_COLS + audit_cols
         if c in df.columns and c not in select_cols
     ]
     business_df = df[business_cols].copy()
@@ -140,4 +164,42 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
     feature_df.to_csv(out_path, index=False)
     log(f"  Saved -> {out_path}")
     log_shape("features_clustering", feature_df)
+
+    # 5. Anomaly-detection matrix: SAME features, standardized, NOT clipped.
+    #
+    # Clipping is the right treatment for K-Means, which would otherwise spend a
+    # centroid on a handful of extreme files. It is the wrong input for outlier
+    # detection, and using one matrix for both silently broke Phase 4:
+    #   - a "global extreme value" cannot be found on an axis whose extremes
+    #     were truncated by construction, because the largest possible deviation
+    #     IS the clip boundary;
+    #   - clipping collapses roughly 1,800 rows per axis onto one identical
+    #     value, so the most extreme records gain a crowd of neighbours and look
+    #     LESS anomalous to LOF and DBSCAN - the treatment hides exactly the
+    #     records it should surface; and
+    #   - that boundary pile-up is a non-Gaussian point mass that distorts the
+    #     covariance matrix Mahalanobis depends on.
+    #
+    # So Phase 4 gets its own matrix, standardized on unclipped values.
+    anomaly_df = df[select_cols].copy()
+    residual_nan = anomaly_df.isna().sum().sum()
+    if residual_nan > 0:
+        anomaly_df = anomaly_df.fillna(0)
+    anomaly_scaler = StandardScaler()
+    anomaly_scaled = pd.DataFrame(
+        anomaly_scaler.fit_transform(anomaly_df[scale_cols]),
+        columns=scale_cols,
+        index=anomaly_df.index,
+    )
+    anomaly_df = pd.concat(
+        [anomaly_df.drop(columns=scale_cols), anomaly_scaled], axis=1
+    )[select_cols]
+    if "SK_ID_CURR" in df.columns:
+        anomaly_df.insert(0, "SK_ID_CURR", df["SK_ID_CURR"].astype(np.int64))
+
+    anomaly_path = os.path.join(OUTPUT_DIR, "features_anomaly.csv")
+    anomaly_df.to_csv(anomaly_path, index=False)
+    log(f"  Saved unclipped anomaly-detection matrix -> {anomaly_path}")
+    log_shape("features_anomaly", anomaly_df)
+
     return feature_df

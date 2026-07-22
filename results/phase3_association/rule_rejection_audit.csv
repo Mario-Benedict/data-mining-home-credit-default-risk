@@ -1,5 +1,5 @@
 reason,rules
-accepted_nontrivial,4471
-algebraic_financial_identity,565
-same_source_missingness_identity,279
-no_behavior_or_history_signal,131
+algebraic_financial_identity,2460
+accepted_nontrivial,1706
+same_source_missingness_identity,274
+schema_induced_missingness_identity,76

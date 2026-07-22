@@ -1,5 +1,5 @@
 """
-Step 5 - Missing value indicators and imputation.
+Missing value indicators and imputation.
 
 Indicators are created FIRST so the imputed value does not destroy the signal
 that a value was originally absent.
@@ -8,7 +8,7 @@ Strategy by column (EDA Section 3):
   FLAG_NO_CAR              -> OWN_CAR_AGE missing = applicant has no car
   FLAG_NO_HOUSING_DATA     -> all BUILDING_MODE_COLS missing = no recorded building detail
   FLAG_EXT_SOURCE_*_MISSING -> score availability is uncertainty, not adverse evidence
-  FLAG_SENTINEL_EMPLOYED   -> already created in step4
+  FLAG_SENTINEL_EMPLOYED   -> already created in clean_structure
 
 Imputation:
   Zero   : OWN_CAR_AGE, BUILDING_MODE_COLS (structural absence == zero)
@@ -30,7 +30,7 @@ from .config import (
 )
 from .utils import log, log_missing, log_shape
 
-# Columns introduced by the five aggregated tables (step2).
+# Columns introduced by the five aggregated tables (aggregate_histories).
 # Absent rows = applicant had no records in that table -> fill with 0.
 AGG_TABLE_COLS_PREFIX = [
     "BUREAU_", "BB_", "PREV_", "POS_", "INST_", "CC_",
@@ -117,5 +117,5 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
     log(f"  Agg-table NaNs -> 0: {agg_null_before:,} cells")
 
     log_missing(df, "after imputation")
-    log_shape("step5_out", df)
+    log_shape("flag_and_impute_missing", df)
     return df

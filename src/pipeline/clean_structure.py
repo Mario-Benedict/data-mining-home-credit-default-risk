@@ -1,5 +1,5 @@
 """
-Step 4 - Structural cleaning: sentinel values, rare categories, column drops.
+Structural cleaning: sentinel values, rare categories, column drops.
 
 Order matters:
   1. DAYS_EMPLOYED sentinel -> FLAG_SENTINEL_EMPLOYED + replace with NaN
@@ -8,7 +8,7 @@ Order matters:
   3. Rare NAME_INCOME_TYPE groups -> "Other_Rare"
      (EDA Section 5: Unemployed/Student/Businessman/Maternity leave total n=55)
   4. ORGANIZATION_TYPE macro-sector mapping (58 -> 12 sectors)
-  5. DAYS_* columns -> positive years (applied in step7 after flags are set here)
+  5. DAYS_* columns -> positive years (applied in engineer_ratios after flags are set here)
 """
 import numpy as np
 import pandas as pd
@@ -57,5 +57,5 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
         n_unique = df["ORGANIZATION_TYPE"].nunique()
         log(f"  ORGANIZATION_TYPE mapped: {n_unique} unique sectors remaining")
 
-    log_shape("step4_out", df)
+    log_shape("clean_structure", df)
     return df

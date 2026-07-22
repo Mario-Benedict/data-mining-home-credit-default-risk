@@ -1,5 +1,5 @@
 """
-Step 7 - Feature engineering, log transforms, and column pruning.
+Feature engineering, log transforms, and column pruning.
 
 Derived features (EDA Section 7, 10):
   AGE_YEARS            = |DAYS_BIRTH| / 365
@@ -12,7 +12,7 @@ Derived features (EDA Section 7, 10):
 DAYS_* conversion: stored as negative days before application date.
   Convert to positive years. Original columns then dropped.
 
-Log transforms (after winsorizing in step6, before scaling in step9):
+Log transforms (after winsorizing in treat_outliers, before scaling in build_matrices):
   AMT_INCOME_TOTAL, AMT_CREDIT, AMT_ANNUITY, AMT_GOODS_PRICE
   Use log1p to handle any residual zeros safely.
 
@@ -23,7 +23,7 @@ Column drops:
   FLAG_MOBIL                      (near-constant, all 1s)
   REGION_RATING_CLIENT            (r > 0.85 with REGION_RATING_CLIENT_W_CITY)
   SK_ID_CURR is RETAINED as an identifier column (excluded from scaling
-  and feature selection in step9/step10) so downstream phases can trace
+  and feature selection in build_matrices/check_features) so downstream phases can trace
   every cluster label / anomaly flag back to a real applicant.
   Original DAYS_* columns         (replaced by positive-year versions)
 """
@@ -52,7 +52,7 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
         df[year_col] = np.abs(df[col]) / 365.0
         log(f"  {col} -> {year_col}")
 
-    # DAYS_EMPLOYED was NaN for sentinel rows after step4 - preserve NaN
+    # DAYS_EMPLOYED was NaN for sentinel rows after clean_structure - preserve NaN
     # The YEARS_EMPLOYED column will also be NaN for those rows (correct).
 
     # Derived ratio features
@@ -83,5 +83,5 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
     df = df.drop(columns=drop_cols)
     log(f"  Dropped {len(drop_cols)} redundant columns (SK_ID_CURR retained as identifier)")
 
-    log_shape("step7_out", df)
+    log_shape("engineer_ratios", df)
     return df

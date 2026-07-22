@@ -1,5 +1,5 @@
 """
-Step 2 - Aggregate all five relational tables to one row per SK_ID_CURR.
+Aggregate all five relational tables to one row per SK_ID_CURR.
 
 EDA Section 8 established what behavioral dimension each table contributes:
   bureau            -> external credit history depth and quality

@@ -1,5 +1,5 @@
 """
-Step 3 - Combine application tables and join all aggregated features.
+Combine application tables and join all aggregated features.
 
 Design decisions:
   - train + test are stacked after dropping TARGET (unsupervised pipeline).

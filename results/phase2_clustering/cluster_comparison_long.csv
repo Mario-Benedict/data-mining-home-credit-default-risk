@@ -1,31 +1,31 @@
 business_dimension,Segment,portfolio_sd
-Repayment burden,Intensive Card User,0.0030382777353100128
-Observed delinquency,Intensive Card User,0.11286278994312057
-Revolving intensity,Intensive Card User,1.9635666036582784
-Credit-history depth,Intensive Card User,0.6325661403212446
-External-score strength,Intensive Card User,-0.028690817397531418
-Borrowing scale,Intensive Card User,0.052514580700077446
-Repayment burden,Repayment-Stress History,0.05132649156918725
-Observed delinquency,Repayment-Stress History,3.2967273396880024
-Revolving intensity,Repayment-Stress History,-0.11562396965181516
-Credit-history depth,Repayment-Stress History,0.15837272079397205
-External-score strength,Repayment-Stress History,-0.05343325923809039
-Borrowing scale,Repayment-Stress History,-0.05099610715165434
-Repayment burden,Thin-File / Low-Intensity,-0.3564766415085895
-Observed delinquency,Thin-File / Low-Intensity,-0.12022836105871403
-Revolving intensity,Thin-File / Low-Intensity,-0.3700443207725008
-Credit-history depth,Thin-File / Low-Intensity,-0.33189701297637086
-External-score strength,Thin-File / Low-Intensity,-0.1223446315567408
-Borrowing scale,Thin-File / Low-Intensity,-0.7214313741965734
-Repayment burden,High-Exposure Applicant,0.4249074445686694
-Observed delinquency,High-Exposure Applicant,-0.13514729216522148
-Revolving intensity,High-Exposure Applicant,-0.37365570563645595
-Credit-history depth,High-Exposure Applicant,-0.2672009496064656
-External-score strength,High-Exposure Applicant,0.1669870820603763
-Borrowing scale,High-Exposure Applicant,0.7595286304939395
-Repayment burden,History-Rich Credit User,-0.154680514525573
-Observed delinquency,History-Rich Credit User,-0.00911017884326416
-Revolving intensity,History-Rich Credit User,-0.31162597849726026
-Credit-history depth,History-Rich Credit User,0.7027574720523169
-External-score strength,History-Rich Credit User,-0.06022212890833189
-Borrowing scale,History-Rich Credit User,-0.10865039825491274
+Repayment burden,Thin-File / Low-Intensity,-0.3753561419728499
+Observed delinquency,Thin-File / Low-Intensity,-0.12045285226489415
+Revolving intensity,Thin-File / Low-Intensity,-0.37153662163475537
+Credit-history depth,Thin-File / Low-Intensity,-0.324490564473855
+External-score strength,Thin-File / Low-Intensity,-0.0891082506687497
+Borrowing scale,Thin-File / Low-Intensity,-0.7454625841748164
+Repayment burden,Repayment-Stress History,0.049000781071497385
+Observed delinquency,Repayment-Stress History,3.299580942207754
+Revolving intensity,Repayment-Stress History,-0.1152677143894451
+Credit-history depth,Repayment-Stress History,0.1594233801173774
+External-score strength,Repayment-Stress History,-0.05246102288739395
+Borrowing scale,Repayment-Stress History,-0.05041261236857053
+Repayment burden,History-Rich Credit User,-0.14305393838487876
+Observed delinquency,History-Rich Credit User,-0.00850662948203033
+Revolving intensity,History-Rich Credit User,-0.30411898235691875
+Credit-history depth,History-Rich Credit User,0.705523267964318
+External-score strength,History-Rich Credit User,-0.09799423953918199
+Borrowing scale,History-Rich Credit User,-0.08594054621820005
+Repayment burden,High-Exposure Applicant,0.42477831788651194
+Observed delinquency,High-Exposure Applicant,-0.13393353123483281
+Revolving intensity,High-Exposure Applicant,-0.374014875645223
+Credit-history depth,High-Exposure Applicant,-0.26805127394129985
+External-score strength,High-Exposure Applicant,0.14422275122579245
+Borrowing scale,High-Exposure Applicant,0.7485723520658358
+Repayment burden,Intensive Card User,0.0026698963061045364
+Observed delinquency,Intensive Card User,0.11318474544326519
+Revolving intensity,Intensive Card User,1.962459561489629
+Credit-history depth,Intensive Card User,0.6299761373358458
+External-score strength,Intensive Card User,-0.027397300916109524
+Borrowing scale,Intensive Card User,0.05240446331336082

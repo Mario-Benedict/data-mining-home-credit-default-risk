@@ -1,11 +1,11 @@
 """
-Step 6 - Outlier treatment.
+Outlier treatment.
 
 EDA Section 6 findings drive every decision here:
 
 AMT_INCOME_TOTAL
   p99 = 472,500; max = 117,000,000 (247x median). Extreme right skew.
-  Action: winsorize at p99 -> then log-transform in step7.
+  Action: winsorize at p99 -> then log-transform in engineer_ratios.
 
 AMT_REQ_CREDIT_BUREAU_* (QRT, MON, YEAR)
   Extreme spikes (max=261 for QRT vs p99~5). Cap at p99.
@@ -19,7 +19,7 @@ DEF_30_CNT_SOCIAL_CIRCLE / DEF_60_CNT_SOCIAL_CIRCLE
   (applicants embedded in high-default social circles). Do NOT winsorize.
   Bin into 0 / 1 / 2+ ordered categories instead.
 
-OBS_30 / OBS_60 already handled in step7 (OBS_60 dropped as redundant with OBS_30).
+OBS_30 / OBS_60 already handled in engineer_ratios (OBS_60 dropped as redundant with OBS_30).
 """
 import numpy as np
 import pandas as pd
@@ -70,5 +70,5 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
         # Drop the original to avoid leaking raw count into encoded features
         df = df.drop(columns=[col])
 
-    log_shape("step6_out", df)
+    log_shape("treat_outliers", df)
     return df

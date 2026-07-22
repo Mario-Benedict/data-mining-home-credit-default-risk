@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import Dash, Input, Output, State, dash_table, dcc, html
+from dash import ALL, Dash, Input, Output, State, ctx, dash_table, dcc, html
 from dash.dash_table.Format import Format, Scheme
 
 
@@ -252,10 +252,10 @@ def humanize_rule(value: str) -> str:
         return " + ".join(terms)
 
     raw = str(value)
-    if "→" not in raw:
+    if "->" not in raw:
         return raw.replace("_", " ")
-    left, right = raw.split("→", 1)
-    readable = f"{readable_side(left)} → {readable_side(right)}"
+    left, right = raw.split("->", 1)
+    readable = f"{readable_side(left)} -> {readable_side(right)}"
     return readable[0].upper() + readable[1:]
 
 
@@ -378,12 +378,14 @@ anomaly_by_segment = anomaly_by_segment.rename(columns=REVIEW_TYPE_LABELS)
 
 NAME_BY_ID = dict(zip(cluster_names["cluster_id"].astype(int), cluster_names["nama"]))
 SEGMENT_ORDER = cluster_names["nama"].tolist()
+# Assigned by position, not by name. Phase 2 renames segments whenever the
+# feature set changes, and a name-keyed palette silently fell back to Plotly
+# defaults the moment that happened.
+SEGMENT_PALETTE = ["#64748B", "#356A8A", "#4F7D65", "#B5534C", "#B98535",
+                   "#7A5C8E", "#4A7C87", "#996B4F"]
 SEGMENT_COLORS = {
-    "Intensive Card User": "#64748B",
-    "History-Rich Credit User": "#356A8A",
-    "Thin-File / Low-Intensity": "#4F7D65",
-    "Repayment-Stress History": "#B5534C",
-    "High-Exposure Applicant": "#B98535",
+    name: SEGMENT_PALETTE[i % len(SEGMENT_PALETTE)]
+    for i, name in enumerate(SEGMENT_ORDER)
 }
 REVIEW_COLORS = {
     "Affordability and repayment review": "#B5534C",
@@ -441,7 +443,7 @@ def fmt_int(value: float) -> str:
 
 
 def fmt_pct(value: float, digits: int = 1) -> str:
-    return "—" if not np.isfinite(value) else f"{value * 100:.{digits}f}%"
+    return ", " if not np.isfinite(value) else f"{value * 100:.{digits}f}%"
 
 
 def wilson_interval(successes: int, total: int, z: float = 1.959964) -> tuple[float, float]:
@@ -523,13 +525,30 @@ PROFILE_AXIS_LABELS = {
     "default_rate": "Observed default rate",
 }
 
-SEGMENT_HEADER_LABELS = {
-    "Intensive Card User": "Intensive Card<br>User",
-    "Repayment-Stress History": "Repayment-Stress<br>History",
-    "Thin-File / Low-Intensity": "Thin-File /<br>Low-Intensity",
-    "High-Exposure Applicant": "High-Exposure<br>Applicant",
-    "History-Rich Credit User": "History-Rich<br>Credit User",
-}
+def wrap_segment_name(name: str, width: int = 16) -> str:
+    """Two-line axis label for a segment name.
+
+    Derived rather than hard-coded: Phase 2 renames segments whenever the
+    feature set changes, and a missing key here used to raise KeyError and take
+    the whole Segments page down with it.
+    """
+    words = str(name).split()
+    if not words:
+        return str(name)
+    lines, current = [], words[0]
+    for word in words[1:]:
+        if len(current) + 1 + len(word) <= width:
+            current = f"{current} {word}"
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return "<br>".join(lines[:2]) if len(lines) <= 2 else "<br>".join(
+        [lines[0], " ".join(lines[1:])]
+    )
+
+
+SEGMENT_HEADER_LABELS = {name: wrap_segment_name(name) for name in cluster_names["nama"]}
 SEGMENT_TICK_LABELS = {
     row["nama"]: (
         f"<b>{SEGMENT_HEADER_LABELS[row['nama']]}</b><br>"
@@ -541,7 +560,7 @@ SEGMENT_TICK_LABELS = {
 
 def format_profile_value(value: float, kind: str) -> str:
     if not np.isfinite(value):
-        return "—"
+        return ", "
     if kind == "count":
         return fmt_int(value)
     if kind == "amount":
@@ -549,7 +568,7 @@ def format_profile_value(value: float, kind: str) -> str:
     if kind == "pct":
         return fmt_pct(value, 1)
     if kind == "multiple":
-        return f"{value:.2f}×"
+        return f"{value:.2f}x"
     if kind == "decimal":
         return f"{value:.3f}"
     return f"{value:,.2f}"
@@ -557,7 +576,7 @@ def format_profile_value(value: float, kind: str) -> str:
 
 def format_profile_cell(value: float, kind: str) -> str:
     if not np.isfinite(value):
-        return "—"
+        return ", "
     if kind == "amount":
         return f"{value / 1000:.0f}k"
     return format_profile_value(value, kind)
@@ -579,7 +598,7 @@ def cluster_top_features(cluster_id: int, limit: int = 3) -> str:
         feature = FEATURE_LABELS.get(item.fitur, item.fitur.replace("_", " ").title())
         direction = "above" if item.rel_diff_pct >= 0 else "below"
         labels.append(f"{feature}: {abs(item.rel_diff_pct) / 100:.2f} SD {direction} the portfolio average")
-    return "<br>• " + "<br>• ".join(labels)
+    return "<br> " + "<br> ".join(labels)
 
 
 def cluster_profile_matrix_figure() -> go.Figure:
@@ -602,7 +621,7 @@ def cluster_profile_matrix_figure() -> go.Figure:
                 ci_low, ci_high = wilson_interval(int(row["defaults"]), int(row["train_applicants"]))
                 comparison_note = (
                     f"{int(row['defaults']):,} defaults among {int(row['train_applicants']):,} training applications<br>"
-                    f"95% CI {ci_low:.2%}–{ci_high:.2%}<br>{row['lift_vs_portfolio']:.2f}x the training-set average"
+                    f"95% CI {ci_low:.2%}-{ci_high:.2%}<br>{row['lift_vs_portfolio']:.2f}x the training-set average"
                 )
             else:
                 comparison_note = f"Number {int(ranks.loc[segment])} of 5, from highest to lowest"
@@ -799,7 +818,7 @@ fig_kmeans = px.scatter(
     kmeans_plot, x="PC1", y="PC2", color="Segment", color_discrete_map=SEGMENT_COLORS,
     opacity=.48, render_mode="webgl",
 )
-fig_kmeans.update_traces(marker=dict(size=4), hovertemplate="%{fullData.name}<br>PC1 %{x:.2f} · PC2 %{y:.2f}<extra></extra>")
+fig_kmeans.update_traces(marker=dict(size=4), hovertemplate="%{fullData.name}<br>PC1 %{x:.2f} - PC2 %{y:.2f}<extra></extra>")
 chart_layout(fig_kmeans, bottom=60)
 
 dense_db = dbscan_viz[dbscan_viz["IS_NOISE"].eq(0)]
@@ -854,7 +873,7 @@ fig_rules = px.scatter(
     custom_data=["short_rule", "support", "confidence", "support_count", "metric_scope"],
 )
 fig_rules.update_traces(
-    hovertemplate="<b>Rule %{y}</b><br>%{customdata[0]}<br>Lift %{x:.2f} · support %{customdata[1]:.1%} (%{customdata[3]:,} applications)<br>Confidence %{customdata[2]:.1%}<br>%{customdata[4]}<extra></extra>"
+    hovertemplate="<b>Rule %{y}</b><br>%{customdata[0]}<br>Lift %{x:.2f} - support %{customdata[1]:.1%} (%{customdata[3]:,} applications)<br>Confidence %{customdata[2]:.1%}<br>%{customdata[4]}<extra></extra>"
 )
 fig_rules.update_xaxes(title="Lift (1.0 means no association)")
 fig_rules.update_yaxes(title="Rule number", autorange="reversed", dtick=1)
@@ -876,7 +895,7 @@ if "support_records" in rule_segment.columns:
         color_discrete_map=SEGMENT_COLORS, custom_data=["mean_confidence", "support_records"],
     )
     fig_rule_segments.update_traces(
-        texttemplate="%{x:.2f}×", textposition="outside",
+        texttemplate="%{x:.2f}x", textposition="outside",
         hovertemplate="%{y}<br>Average lift %{x:.2f}x<br>Average confidence %{customdata[0]:.1%}<br>Total rule matches %{customdata[1]:,} (may overlap)<extra></extra>",
     )
     fig_rule_segments.update_xaxes(title="Average lift of selected rules")
@@ -904,7 +923,7 @@ fig_overlap = go.Figure(go.Heatmap(
     z=detector_overlap.values.astype(float), x=detector_overlap.columns, y=detector_overlap.index,
     colorscale="Blues", zmin=0, zmax=1, text=np.round(detector_overlap.values.astype(float), 2),
     texttemplate="%{text:.2f}", colorbar=dict(title="Jaccard", thickness=14),
-    hovertemplate="%{y} × %{x}<br>Jaccard overlap %{z:.2f}<extra></extra>",
+    hovertemplate="%{y} x %{x}<br>Jaccard overlap %{z:.2f}<extra></extra>",
 ))
 chart_layout(fig_overlap, left=105, bottom=85)
 
@@ -928,6 +947,149 @@ fig_review_segment.update_yaxes(title="", categoryorder="array", categoryarray=S
 fig_review_segment.update_xaxes(title="Records flagged by 3+ methods")
 chart_layout(fig_review_segment, left=120)
 
+# Anomaly scope: what kind of unusual a record is, not just how unusual.
+SCOPE_LABELS = {
+    "Global / extreme value": "Global",
+    "Contextual / unusual combination": "Contextual",
+    "Collective / density": "Collective",
+}
+SCOPE_ORDER = ["Global", "Contextual", "Collective"]
+SCOPE_COLORS = {"Global": "#B5534C", "Contextual": "#356A8A", "Collective": "#4F7D65"}
+
+# Why each kind of unusual is a different credit problem. These are the review
+# consequences, not restatements of the detector maths.
+SCOPE_MEANING = {
+    "Global": (
+        "A value sits outside the plausible range for the whole portfolio.",
+        "Either the figure was captured wrongly or the file is genuinely extreme. Both matter, because "
+        "affordability tables and cut-offs are calibrated on the bulk of the book and simply do not apply here. "
+        "Confirm the number at source before any assessment continues.",
+    ),
+    "Contextual": (
+        "Every value looks ordinary alone; the combination is unusual for the applicant's peer group.",
+        "This is the hardest kind to catch and the most consequential. No single-field rule fires, so these files "
+        "pass rule-based controls untouched. It takes a multivariate view to see that the pattern does not fit "
+        "applicants who otherwise look the same.",
+    ),
+    "Collective": (
+        "A small group of records share a shape that is rare for the portfolio.",
+        "When records cluster together in a sparse pocket, the cause is usually systemic rather than individual: "
+        "one channel, branch, product, or intake period behaving differently. Investigate the group as a group; "
+        "reviewing the files one at a time hides the common cause.",
+    ),
+}
+
+scope_series = anomaly_investigation["Anomaly Scope"].map(SCOPE_LABELS)
+scope_counts = scope_series.value_counts().reindex(SCOPE_ORDER).fillna(0).astype(int)
+scope_share = scope_counts / scope_counts.sum()
+scope_frame = pd.DataFrame({
+    "Scope": SCOPE_ORDER,
+    "Records": scope_counts.to_numpy(),
+    "Share": scope_share.to_numpy(),
+    "Meaning": [SCOPE_MEANING[s][0] for s in SCOPE_ORDER],
+})
+fig_scope = px.bar(
+    scope_frame.iloc[::-1], x="Records", y="Scope", orientation="h",
+    color="Scope", color_discrete_map=SCOPE_COLORS,
+    custom_data=["Share", "Meaning"],
+)
+fig_scope.update_traces(
+    texttemplate="%{x:,}", textposition="outside",
+    hovertemplate="<b>%{y}</b><br>%{x:,} records (%{customdata[0]:.1%} of the queue)<br><br>%{customdata[1]}<extra></extra>",
+)
+fig_scope.update_xaxes(title="Records flagged by 3+ methods", range=[0, scope_counts.max() * 1.25])
+fig_scope.update_yaxes(title="")
+chart_layout(fig_scope, legend=False, left=90)
+
+scope_by_segment = (
+    pd.crosstab(anomaly_investigation["Segment"], scope_series)
+    .reindex(index=SEGMENT_ORDER, columns=SCOPE_ORDER)
+    .fillna(0).astype(int)
+)
+scope_segment_long = scope_by_segment.reset_index().melt(
+    id_vars="Segment", var_name="Scope", value_name="Records"
+)
+scope_segment_long["Segment total"] = scope_segment_long["Segment"].map(scope_by_segment.sum(axis=1))
+scope_segment_long["Share of segment queue"] = (
+    scope_segment_long["Records"] / scope_segment_long["Segment total"].replace(0, np.nan)
+)
+fig_scope_segment = px.bar(
+    scope_segment_long, x="Records", y="Segment", color="Scope", orientation="h",
+    color_discrete_map=SCOPE_COLORS, category_orders={"Scope": SCOPE_ORDER},
+    custom_data=["Share of segment queue", "Segment total"],
+)
+fig_scope_segment.update_traces(
+    hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{x:,} records<br>"
+                  "%{customdata[0]:.0%} of that segment's queue (%{customdata[1]:,} flagged)<extra></extra>",
+)
+fig_scope_segment.update_yaxes(title="", categoryorder="array", categoryarray=SEGMENT_ORDER[::-1])
+fig_scope_segment.update_xaxes(title="Records flagged by 3+ methods")
+chart_layout(fig_scope_segment, left=120)
+
+scope_by_review = (
+    pd.crosstab(scope_series, anomaly_investigation["Review Type"])
+    .reindex(index=SCOPE_ORDER).fillna(0).astype(int)
+)
+scope_review_long = scope_by_review.reset_index(names="Scope").melt(
+    id_vars="Scope", var_name="Review Type", value_name="Records"
+)
+fig_scope_review = px.bar(
+    scope_review_long, x="Records", y="Scope", color="Review Type", orientation="h",
+    color_discrete_map=REVIEW_COLORS,
+)
+fig_scope_review.update_traces(
+    hovertemplate="<b>%{y} anomaly</b><br>%{fullData.name}: %{x:,} records<extra></extra>",
+)
+fig_scope_review.update_yaxes(title="", categoryorder="array", categoryarray=SCOPE_ORDER[::-1])
+fig_scope_review.update_xaxes(title="Records flagged by 3+ methods")
+chart_layout(fig_scope_review, left=90)
+
+
+# How 356,255 applications narrow to a queue a credit team can actually staff.
+_total_eval = int(anomaly_summary.Total_Evaluated)
+_high = int(anomaly_summary.HIGH_CONFIDENCE)
+_moderate = int(anomaly_summary.MODERATE)
+_weak = int(anomaly_summary.WEAK)
+funnel_stages = pd.DataFrame({
+    "Stage": [
+        "All applications",
+        "Flagged by at least one method",
+        "Flagged by at least two",
+        "Consensus queue (three or more)",
+    ],
+    "Records": [
+        _total_eval,
+        _weak + _moderate + _high,
+        _moderate + _high,
+        _high,
+    ],
+})
+fig_anomaly_funnel = go.Figure(go.Funnel(
+    y=funnel_stages["Stage"],
+    x=funnel_stages["Records"],
+    textposition="inside",
+    texttemplate="%{x:,}",
+    marker=dict(color=["#CBD5E1", "#9DB3BF", "#5C87A0", "#B5534C"]),
+    hovertemplate="<b>%{y}</b><br>%{x:,} applications<br>%{percentInitial} of the portfolio<extra></extra>",
+    connector=dict(line=dict(color="#E4E9EC")),
+))
+chart_layout(fig_anomaly_funnel, legend=False, left=210)
+
+
+def scope_explainer() -> html.Div:
+    """One card per scope type: what it is, and why it is a credit problem."""
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.Span(scope, className="scope-name"),
+                html.Span(f"{scope_counts[scope]:,}", className="scope-count"),
+            ], className="scope-card-head"),
+            html.P(SCOPE_MEANING[scope][0], className="scope-what"),
+            html.P(SCOPE_MEANING[scope][1], className="scope-why"),
+        ], className="scope-card", style={"--scope-color": SCOPE_COLORS[scope]})
+        for scope in SCOPE_ORDER
+    ], className="scope-grid")
+
 anomaly_plot = anomaly_pca.copy()
 high = anomaly_plot[anomaly_plot["anomaly_category"].eq("HIGH_CONFIDENCE_ANOMALY")]
 other = anomaly_plot[~anomaly_plot.index.isin(high.index)]
@@ -944,7 +1106,7 @@ fig_anomaly_pca = px.scatter(
     color_discrete_map=SEVERITY_COLORS, opacity=.50, render_mode="webgl",
     category_orders={"Review status": list(SEVERITY_COLORS)},
 )
-fig_anomaly_pca.update_traces(marker=dict(size=4), hovertemplate="%{fullData.name}<br>PC1 %{x:.2f} · PC2 %{y:.2f}<extra></extra>")
+fig_anomaly_pca.update_traces(marker=dict(size=4), hovertemplate="%{fullData.name}<br>PC1 %{x:.2f} - PC2 %{y:.2f}<extra></extra>")
 chart_layout(fig_anomaly_pca, bottom=60)
 
 
@@ -1096,9 +1258,327 @@ def anomaly_table_component() -> dash_table.DataTable:
     )
 
 
+# Where the money actually is.
+#
+# Default RATE answers "how often does this cohort fail?". It does not answer
+# "how much does failure cost?", and for a lender those are different questions
+# with different answers. A segment borrowing three times as much per loan can
+# default less often and still dominate losses. Credit at risk multiplies
+# observed defaults by the segment's median loan, which is a rough but honest
+# first-order view of exposure to loss.
+loss_view = rates.merge(
+    cluster_business[["Segment", "median_credit", "median_card_utilisation", "applicants"]],
+    on="Segment", how="left",
+)
+loss_view["share_of_book"] = loss_view["train_applicants"] / loss_view["train_applicants"].sum()
+loss_view["share_of_defaults"] = loss_view["defaults"] / loss_view["defaults"].sum()
+loss_view["credit_at_risk"] = loss_view["defaults"] * loss_view["median_credit"]
+loss_view["share_of_credit_at_risk"] = loss_view["credit_at_risk"] / loss_view["credit_at_risk"].sum()
+loss_view["exposure"] = loss_view["applicants"] * loss_view["median_credit"]
+loss_view["share_of_exposure"] = loss_view["exposure"] / loss_view["exposure"].sum()
+loss_view = loss_view.sort_values("share_of_credit_at_risk", ascending=False)
+
+
+def _loss_row(segment: str, column: str) -> float:
+    match = loss_view.loc[loss_view["Segment"].eq(segment), column]
+    return float(match.iloc[0]) if len(match) else float("nan")
+
+
+TOP_MONEY_SEGMENT = loss_view.iloc[0]["Segment"]
+WORST_RATE_SEGMENT = loss_view.sort_values("default_rate", ascending=False).iloc[0]["Segment"]
+CARD_SEGMENT = next(
+    (name for name in loss_view["Segment"] if "Card" in str(name)),
+    loss_view.iloc[1]["Segment"],
+)
+THIN_SEGMENT = next(
+    (name for name in loss_view["Segment"] if "Thin" in str(name)),
+    loss_view.iloc[-1]["Segment"],
+)
+
+concentration_long = loss_view.melt(
+    id_vars="Segment",
+    value_vars=["share_of_book", "share_of_defaults", "share_of_credit_at_risk"],
+    var_name="Measure", value_name="Share",
+)
+concentration_long["Measure"] = concentration_long["Measure"].map({
+    "share_of_book": "Share of applicants",
+    "share_of_defaults": "Share of defaults",
+    "share_of_credit_at_risk": "Share of money at risk",
+})
+fig_loss_concentration = px.bar(
+    concentration_long, x="Share", y="Segment", color="Measure", orientation="h",
+    barmode="group",
+    color_discrete_map={
+        "Share of applicants": "#CBD5E1",
+        "Share of defaults": "#5C87A0",
+        "Share of money at risk": "#B5534C",
+    },
+    category_orders={"Segment": loss_view["Segment"].tolist()[::-1]},
+)
+fig_loss_concentration.update_traces(
+    hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{x:.1%}<extra></extra>",
+)
+fig_loss_concentration.update_xaxes(title="Share of the labelled portfolio", tickformat=".0%")
+fig_loss_concentration.update_yaxes(title="")
+chart_layout(fig_loss_concentration, left=125)
+
+# How often a group fails, against how much its failures cost. A group can sit
+# far left (rarely fails) and still sit high (costs the most), which is the whole
+# argument of finding 01 in a single picture.
+fig_risk_quadrant = px.scatter(
+    loss_view, x="default_rate", y="share_of_credit_at_risk",
+    size="train_applicants", color="Segment",
+    color_discrete_map=SEGMENT_COLORS, size_max=58,
+    custom_data=["Segment", "train_applicants", "median_credit", "share_of_book"],
+)
+fig_risk_quadrant.add_vline(
+    x=float(metric("observed_default_rate")), line_dash="dot", line_color="#91A0A8",
+    annotation_text="book average", annotation_position="top",
+)
+fig_risk_quadrant.update_traces(
+    hovertemplate="<b>%{customdata[0]}</b><br>Falls behind %{x:.2%} of the time<br>"
+                  "Holds %{y:.1%} of money at risk<br>%{customdata[1]:,} customers "
+                  "(%{customdata[3]:.1%} of the book)<br>Typical loan %{customdata[2]:,.0f}<extra></extra>",
+)
+fig_risk_quadrant.update_xaxes(title="How often the group falls behind", tickformat=".1%")
+fig_risk_quadrant.update_yaxes(title="Share of money at risk", tickformat=".0%")
+chart_layout(fig_risk_quadrant, left=60)
+
+# Over-representation: share of failures divided by share of customers. Above 1
+# means the group produces more trouble than its size would predict.
+loss_view["over_index"] = loss_view["share_of_defaults"] / loss_view["share_of_book"]
+over_plot = loss_view.sort_values("over_index")
+fig_overrepresentation = px.bar(
+    over_plot, x="over_index", y="Segment", orientation="h",
+    color="Segment", color_discrete_map=SEGMENT_COLORS,
+    custom_data=["share_of_book", "share_of_defaults"],
+)
+fig_overrepresentation.add_vline(x=1.0, line_dash="dot", line_color="#16232B")
+fig_overrepresentation.update_traces(
+    texttemplate="%{x:.2f}x", textposition="outside",
+    hovertemplate="<b>%{y}</b><br>%{customdata[0]:.1%} of customers produce "
+                  "%{customdata[1]:.1%} of the trouble<br>Index %{x:.2f}x<extra></extra>",
+)
+fig_overrepresentation.update_xaxes(
+    title="Share of customers who fall behind, divided by share of customers",
+    range=[0, over_plot.over_index.max() * 1.25],
+)
+fig_overrepresentation.update_yaxes(title="")
+chart_layout(fig_overrepresentation, legend=False, left=125)
+
+# Pareto of money at risk. Makes the size of each prize obvious: the group that
+# fails most often is the last sliver on the right.
+pareto = loss_view.sort_values("share_of_credit_at_risk", ascending=False).copy()
+pareto["cumulative"] = pareto["share_of_credit_at_risk"].cumsum()
+fig_money_pareto = go.Figure()
+fig_money_pareto.add_trace(go.Bar(
+    x=pareto["Segment"], y=pareto["share_of_credit_at_risk"],
+    marker_color=[SEGMENT_COLORS.get(s, "#64748B") for s in pareto["Segment"]],
+    name="Share of money at risk",
+    customdata=np.stack([pareto["default_rate"], pareto["train_applicants"]], axis=-1),
+    hovertemplate="<b>%{x}</b><br>Holds %{y:.1%} of money at risk<br>"
+                  "Falls behind %{customdata[0]:.2%} of the time<br>"
+                  "%{customdata[1]:,} customers<extra></extra>",
+))
+fig_money_pareto.add_trace(go.Scatter(
+    x=pareto["Segment"], y=pareto["cumulative"], name="Running total",
+    mode="lines+markers", line=dict(color="#16232B", width=2), marker=dict(size=7),
+    hovertemplate="Top groups to here hold %{y:.1%} of money at risk<extra></extra>",
+))
+fig_money_pareto.update_yaxes(title="Share of money at risk", tickformat=".0%")
+fig_money_pareto.update_xaxes(title="", tickangle=-18)
+chart_layout(fig_money_pareto, left=58, bottom=88)
+
+# What a segment average hides. Even the worst group is mostly people who paid.
+mix = loss_view.copy()
+mix["Kept paying"] = mix["train_applicants"] - mix["defaults"]
+mix["Fell behind"] = mix["defaults"]
+mix_long = mix.melt(
+    id_vars=["Segment", "train_applicants"],
+    value_vars=["Kept paying", "Fell behind"],
+    var_name="Outcome", value_name="Customers",
+)
+mix_long["Share"] = mix_long["Customers"] / mix_long["train_applicants"]
+fig_outcome_mix = px.bar(
+    mix_long, x="Share", y="Segment", color="Outcome", orientation="h",
+    color_discrete_map={"Kept paying": "#9DB3BF", "Fell behind": "#B5534C"},
+    category_orders={
+        "Segment": loss_view.sort_values("default_rate")["Segment"].tolist(),
+        "Outcome": ["Kept paying", "Fell behind"],
+    },
+    custom_data=["Customers"],
+)
+fig_outcome_mix.update_traces(
+    hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{customdata[0]:,} customers (%{x:.1%})<extra></extra>",
+)
+fig_outcome_mix.update_xaxes(title="Share of the group", tickformat=".0%")
+fig_outcome_mix.update_yaxes(title="")
+chart_layout(fig_outcome_mix, left=125)
+
+
+def finding(number: str, headline: str, detail: str, action: str | None = None) -> html.Div:
+    """One numbered finding: what the business is seeing, then what to do about it."""
+    body = [
+        html.Div(headline, className="finding-headline"),
+        html.P(detail, className="finding-detail"),
+    ]
+    if action:
+        body.append(html.Div([
+            html.Span("What to do", className="action-label"),
+            html.Span(action, className="action-text"),
+        ], className="finding-action"))
+    return html.Div([
+        html.Div(number, className="finding-num"),
+        html.Div(body),
+    ], className="finding")
+
+
+def keyfindings_layout() -> html.Section:
+    baseline = metric("observed_default_rate")
+    money_rate = _loss_row(TOP_MONEY_SEGMENT, "default_rate")
+    money_car = _loss_row(TOP_MONEY_SEGMENT, "share_of_credit_at_risk")
+    money_exp = _loss_row(TOP_MONEY_SEGMENT, "share_of_exposure")
+    money_loan = _loss_row(TOP_MONEY_SEGMENT, "median_credit")
+    worst_rate = _loss_row(WORST_RATE_SEGMENT, "default_rate")
+    worst_car = _loss_row(WORST_RATE_SEGMENT, "share_of_credit_at_risk")
+    worst_n = _loss_row(WORST_RATE_SEGMENT, "train_applicants")
+    card_book = _loss_row(CARD_SEGMENT, "share_of_book")
+    card_def = _loss_row(CARD_SEGMENT, "share_of_defaults")
+    card_car = _loss_row(CARD_SEGMENT, "share_of_credit_at_risk")
+    card_util = _loss_row(CARD_SEGMENT, "median_card_utilisation")
+    thin_book = _loss_row(THIN_SEGMENT, "share_of_book")
+    thin_rate = _loss_row(THIN_SEGMENT, "default_rate")
+    data_defects = int(anomaly_investigation["Review Type"].value_counts().get("Data quality check", 0))
+    ext_missing = float(
+        quality.loc[quality["issue"].str.contains("External score 1", case=False, na=False), "affected_share"].iloc[0]
+    ) if quality["issue"].str.contains("External score 1", case=False, na=False).any() else float("nan")
+
+    return html.Section([
+        heading("KEY FINDINGS", "What is happening in this loan book",
+                "Six things the portfolio is telling us, what each one means commercially, and what to do about it. "
+                "The sections behind this one hold the evidence."),
+        html.Div([
+            card("Loans in the book", fmt_int(_total_eval), "Applications analysed", "blue"),
+            card("Customers who fall behind", fmt_pct(baseline, 2), "The number every claim here is measured against", "amber"),
+            card("Distinct customer types", str(len(SEGMENT_ORDER)), "By how they borrow and repay", "green"),
+            card("Files needing a human", fmt_int(_high), f"{_high / _total_eval:.2%} of the book", "red"),
+        ], className="metric-grid"),
+
+        finding(
+            "01",
+            "The safest customers carry the most money at risk.",
+            f"{TOP_MONEY_SEGMENT} falls behind less often than anyone else, {money_rate:.2%} against an "
+            f"{baseline:.2%} book average. It still accounts for {money_car:.0%} of all money at risk and "
+            f"{money_exp:.0%} of total lending. The reason is loan size. Its typical loan is "
+            f"{int(money_loan):,}, roughly three times the smallest segment's, so a low failure rate on a large "
+            "loan costs more than a high failure rate on a small one.",
+            "Size review and monitoring capacity by money at risk rather than by failure rate. A dashboard that "
+            "ranks segments by percentage will send your best people to the cheapest problem.",
+        ),
+        html.Div([
+            panel("Customers, failures, and money", graph(fig_loss_concentration, "standard"),
+                  "Grey is share of customers, blue is share who fell behind, red is share of money at risk. "
+                  "Where red overtakes blue the loans are large. Where blue overtakes red they are small."),
+            panel("How often a group fails, against what it costs", graph(fig_risk_quadrant, "standard"),
+                  "Bubble size is the number of customers. The group furthest left, meaning the one that fails "
+                  "least often, sits highest on cost."),
+        ], className="two-col"),
+
+        finding(
+            "02",
+            "The worst-performing group is almost irrelevant to the bottom line.",
+            f"{WORST_RATE_SEGMENT} fails most often, at {worst_rate:.2%}, roughly "
+            f"{worst_rate / baseline:.1f} times the book average. It is also only {int(worst_n):,} customers "
+            f"holding {worst_car:.1%} of the money at risk. Removing its losses entirely would barely move total "
+            "losses. It is the group most people would target first, and financially it is the smallest prize "
+            "on the table.",
+            "Keep it as a focused hardship and treatment queue, where its small size is an advantage. Do not "
+            "build the loss-reduction strategy around it.",
+        ),
+        panel("Where the money at risk actually sits", graph(fig_money_pareto, "standard"),
+              "Bars are each group's share of money at risk, largest first. The line is the running total. "
+              "Two groups account for most of it, and the group that fails most often is the last sliver "
+              "on the right.", wide=True),
+
+        finding(
+            "03",
+            "Credit-card borrowing concentrates the risk, and it is the one place you can act quickly.",
+            f"{CARD_SEGMENT} is {card_book:.0%} of customers but {card_def:.0%} of those who fall behind and "
+            f"{card_car:.0%} of money at risk, with typical card usage at {card_util:.0%} of the available limit. "
+            "It is over-represented in trouble on every measure. It is also the one place where the lender keeps "
+            "a live lever. An instalment loan is fixed once signed, but a card limit can be reviewed while the "
+            "customer is still performing.",
+            "Trigger a limit and affordability review on rising card usage, before arrears appear. This is the "
+            "highest-leverage intervention available in the book.",
+        ),
+        panel("Which groups produce more trouble than their size predicts", graph(fig_overrepresentation, "standard"),
+              "Share of customers who fall behind divided by share of customers. Anything above 1.00x means the "
+              "group generates more trouble than its headcount would suggest.", wide=True),
+
+        finding(
+            "04",
+            "A third of the book cannot be assessed properly, and it is not the risky third.",
+            f"{THIN_SEGMENT} is {thin_book:.0%} of customers and falls behind at {thin_rate:.2%}, which is lower "
+            f"than the {baseline:.2%} book average rather than higher. These are people with little borrowing "
+            f"history on file, and {ext_missing:.0%} of the whole book has no external credit score at all. Thin "
+            "information is being experienced as risk when the evidence says these customers perform slightly "
+            "better than average.",
+            "Treat missing history as missing information rather than as bad history. Collect permitted "
+            "alternative evidence so this group can be priced on what it does rather than on what is unknown. "
+            "It is an underserved growth pool, not a threat.",
+        ),
+        html.Div([
+            panel("How often each group falls behind", graph(fig_rates, "standard"),
+                  "Measured on customers whose outcome we already know."),
+            panel("How the groups differ", graph(fig_cluster_profiles, "profile"),
+                  "Colour shows distance from the book average, not approval or decline."),
+        ], className="two-col"),
+
+        finding(
+            "05",
+            "Some files are wrong rather than risky, and they are cheaper to fix at the front door.",
+            f"{fmt_int(_high)} files need a human to look at them. Of those, {data_defects:,} fail basic "
+            "plausibility outright. One customer is recorded as paying 0.0% of every amount due while carrying a "
+            "debt-to-limit ratio hundreds of times beyond anything else in the book. These are data-capture "
+            "failures rather than credit decisions, and each one consumes underwriting time that should go to "
+            "real cases.",
+            "Add validation at the point of capture for the handful of fields that produce impossible values. "
+            "Preventing a bad record costs far less than reviewing it later.",
+        ),
+        html.Div([
+            panel("From whole book to review queue", graph(fig_anomaly_funnel, "standard")),
+            panel("What kind of problem each file has", graph(fig_scope, "standard"),
+                  "Most are unusual only in combination. No single field looks wrong, which is why routine "
+                  "checks miss them."),
+        ], className="two-col"),
+
+        finding(
+            "06",
+            "These groups describe the book. They cannot decide a single customer.",
+            f"The gap between the best and worst group is {(worst_rate - loss_view['default_rate'].min()) * 100:.1f} "
+            f"percentage points of failure rate. Even in the worst group, {1 - worst_rate:.0%} of customers keep "
+            "paying. Any rule that declined someone for the group they fall into would be wrong about the large "
+            "majority of them, and would be indefensible to that customer and to a regulator.",
+            "Use these findings to set strategy, staffing, monitoring, and which questions to ask. Use an "
+            "individual's own evidence to make an individual's decision.",
+        ),
+        panel("What a group average hides", graph(fig_outcome_mix, "standard"),
+              "Every group is mostly people who kept paying. The differences between them are real and useful "
+              "for planning, and far too small to justify a decision about any one customer.", wide=True),
+        html.Div([
+            html.Strong("One caution on the numbers above"),
+            html.Span(
+                f"{TOP_MONEY_SEGMENT} looks safe partly because it was already screened hardest. Large loans "
+                "attract the strictest checks, so the customers who got through are the ones who passed them, "
+                "and we cannot see who was turned away. Reading that low failure rate as permission to relax "
+                "the criteria would remove the very thing producing it."),
+        ], className="guardrail"),
+    ], className="tab-section")
+
+
 def overview_layout() -> html.Section:
     return html.Section([
-        heading("01 · DATA", "Start with the data we actually have",
+        heading("01 - DATA", "Start with the data we actually have",
                 "We use train and test records to find patterns. Any check against TARGET uses the labeled training set only."),
         html.Div([
             card("Applications analysed", "356,255", "307,511 train + 48,744 test", "blue"),
@@ -1124,7 +1604,7 @@ def segments_layout() -> html.Section:
     if not method_agreement.empty:
         ward_text = f"ARI {method_agreement.adjusted_rand_index.iloc[0]:.3f}"
     return html.Section([
-        heading("02 · CUSTOMER GROUPS", "How the five clusters differ",
+        heading("02 - CUSTOMER GROUPS", "How the five clusters differ",
                 "The first chart shows broad patterns. The next one puts the actual values side by side, including the observed default rate for training records."),
         panel("Broad differences between clusters", graph(fig_segment_heatmap, "tall", min_width=720),
               "Each cell is the cluster average after the features in that row were standardized. Compare clusters across a row. A positive value means higher than the portfolio average, not better.", wide=True),
@@ -1163,7 +1643,7 @@ def segments_layout() -> html.Section:
 
 def rules_layout() -> html.Section:
     return html.Section([
-        heading("03 · ASSOCIATION RULES", "Conditions that often appear together",
+        heading("03 - ASSOCIATION RULES", "Conditions that often appear together",
                 "We removed rules that simply restate a formula. Each cluster rule uses only the applications in that cluster."),
         html.Div([
             panel("Rule strength and coverage", graph(fig_rules, "tall")),
@@ -1179,7 +1659,7 @@ def rules_layout() -> html.Section:
 def anomalies_layout() -> html.Section:
     counts = anomaly_investigation["Review Type"].value_counts()
     return html.Section([
-        heading("04 · RECORDS TO REVIEW", "Why these unusual applications need a closer look",
+        heading("04 - RECORDS TO REVIEW", "Why these unusual applications need a closer look",
                 "A record enters the queue when at least three methods agree. The evidence tells the reviewer what to check. The flag itself is never a credit decision."),
         html.Div([
             card("Flagged by 3+ methods", fmt_int(anomaly_summary.HIGH_CONFIDENCE), "Stronger agreement between methods", "red"),
@@ -1192,6 +1672,22 @@ def anomalies_layout() -> html.Section:
             panel("Where methods agree", graph(fig_overlap, "standard", min_width=600),
                   "Jaccard compares the records shared by two methods, even when they flag different numbers of applications."),
         ], className="two-col"),
+        html.Div("What kind of unusual", className="subsection-title"),
+        html.P("Two records can both be flagged by the same number of methods and still need completely different "
+               "handling. The scope says what kind of unusual a record is, which decides who reviews it and what "
+               "they check first.", className="subsection-lede"),
+        scope_explainer(),
+        html.Div([
+            panel("How the queue splits by kind", graph(fig_scope, "standard"),
+                  "Contextual records dominate. They are the ones a single-field rule would never catch."),
+            panel("Kind of unusual by cluster", graph(fig_scope_segment, "standard"),
+                  "Repayment-Stress History holds 2,713 of the 3,190 contextual records. Around a third of that "
+                  "whole segment is contextually unusual, which is why it carries the heaviest review load."),
+        ], className="two-col"),
+        panel("Kind of unusual against the type of review it triggers", graph(fig_scope_review, "compact"),
+              "Every one of the 64 data-consistency checks is a global extreme, and none are contextual. That fits "
+              "how capture errors behave: a mistyped figure lands outside the plausible range, whereas a wrong-looking "
+              "combination of otherwise valid figures points at affordability rather than at the data.", wide=True),
         html.Div([
             panel("Why records were flagged", graph(fig_drivers, "tall")),
             panel("Review queue by cluster", graph(fig_review_segment, "tall")),
@@ -1210,7 +1706,7 @@ def outcome_layout() -> html.Section:
     ref_precision = metric("precision", reference_metrics)
     ref_recall = metric("recall", reference_metrics)
     return html.Section([
-        heading("05 · DEFAULT OUTCOME CHECK", "Clusters do not predict individual defaults well",
+        heading("05 - DEFAULT OUTCOME CHECK", "Clusters do not predict individual defaults well",
                 "We compare each cluster's observed default rate with TARGET in the training data. A separate logistic model shows what changes when prediction is the goal."),
         html.Div([
             card("Cluster flag precision", fmt_pct(metric("precision"), 2), "Among applicants in flagged clusters", "red"),
@@ -1234,13 +1730,25 @@ def outcome_layout() -> html.Section:
     ], className="tab-section")
 
 
-TAB_BUILDERS = {
+SECTION_BUILDERS = {
+    "keyfindings": keyfindings_layout,
     "overview": overview_layout,
     "segments": segments_layout,
     "rules": rules_layout,
     "anomalies": anomalies_layout,
     "outcome": outcome_layout,
 }
+
+# Rail order. Key findings leads because it carries the conclusions; the phase
+# sections behind it are the evidence. The number is a quiet step marker.
+SECTIONS = [
+    ("keyfindings", "Key findings", ""),
+    ("overview", "Data", "01"),
+    ("segments", "Segments", "02"),
+    ("rules", "Rules", "03"),
+    ("anomalies", "Anomalies", "04"),
+    ("outcome", "Outcome", "05"),
+]
 
 
 app = Dash(
@@ -1252,62 +1760,64 @@ app = Dash(
 server = app.server
 
 app.layout = html.Div([
-    html.Header([
+    html.Aside([
         html.Div([
-            html.Div("HOME CREDIT · PORTFOLIO ANALYSIS", className="eyebrow"),
-            html.H1("What the Home Credit portfolio data tells us"),
-            html.P("Five customer groups, recurring application patterns, unusual records, and a check against observed defaults."),
+            html.Div("Home Credit", className="rail-brand-name"),
+            html.Div("Portfolio discovery", className="rail-brand-sub"),
+        ], className="rail-brand"),
+        html.Nav([
+            html.Button(
+                [html.Span(num, className="rail-num"), html.Span(label, className="rail-label")],
+                id={"type": "rail-link", "section": key},
+                className="rail-link",
+                n_clicks=0,
+            )
+            for key, label, num in SECTIONS
+        ], className="rail-nav"),
+        html.Div([
+            html.Div([html.Span("356,255"), html.Span("applications")], className="rail-stat"),
+            html.Div([html.Span("307,511"), html.Span("labelled (train)")], className="rail-stat"),
+            html.Div([html.Span("48,744"), html.Span("unlabelled (test)")], className="rail-stat"),
+        ], className="rail-meta"),
+    ], className="rail"),
+    html.Div([
+        html.Main(id="section-content", className="section-content"),
+        html.Footer([
+            html.Span("Methods and reasoning: REPORT.md"),
+            html.Span("Charts read the artefacts written by the project notebooks"),
         ]),
-        html.Div([
-            html.Span("356,255 applications analysed"),
-            html.Span("307,511 have TARGET labels"),
-            html.Span("48,744 test rows have no TARGET label"),
-        ], className="scope-badges"),
-    ], className="hero"),
-    dcc.Tabs(
-        id="phase-tabs",
-        value="overview",
-        className="phase-tabs",
-        parent_className="tabs-shell",
-        children=[
-            dcc.Tab(label="Overview", value="overview", className="phase-tab", selected_className="phase-tab selected"),
-            dcc.Tab(label="Segments", value="segments", className="phase-tab", selected_className="phase-tab selected"),
-            dcc.Tab(label="Rules", value="rules", className="phase-tab", selected_className="phase-tab selected"),
-            dcc.Tab(label="Anomalies", value="anomalies", className="phase-tab", selected_className="phase-tab selected"),
-            dcc.Tab(label="Outcome", value="outcome", className="phase-tab", selected_className="phase-tab selected"),
-        ],
-    ),
-    dcc.Store(id="tab-scroll-signal"),
-    html.Main(id="tab-content", className="phase-content"),
-    html.Footer([
-        html.Span("Methods and reasoning: REPORT.md and reports/reasoning_validation.md"),
-        html.Span("Charts use files produced by the project notebooks"),
-    ]),
+    ], className="canvas"),
+    dcc.Store(id="section-scroll-signal"),
 ], className="app-shell")
 
 
-@app.callback(Output("tab-content", "children"), Input("phase-tabs", "value"))
-def render_tab(value: str):
-    return TAB_BUILDERS.get(value, overview_layout)()
+@app.callback(
+    Output("section-content", "children"),
+    Output({"type": "rail-link", "section": ALL}, "className"),
+    Input({"type": "rail-link", "section": ALL}, "n_clicks"),
+)
+def render_section(_clicks):
+    triggered = ctx.triggered_id
+    active = triggered["section"] if isinstance(triggered, dict) else "keyfindings"
+    # Derive order from the resolved output ids; ALL sorts by id, not by SECTIONS.
+    order = [item["id"]["section"] for item in ctx.outputs_list[1]]
+    classes = ["rail-link active" if key == active else "rail-link" for key in order]
+    return SECTION_BUILDERS.get(active, keyfindings_layout)(), classes
 
 
 app.clientside_callback(
     """
-    function(value) {
+    function(_clicks) {
         window.requestAnimationFrame(function() {
-            const content = document.getElementById('tab-content');
-            const tabs = document.querySelector('.tabs-shell');
-            if (content) {
-                const offset = tabs ? tabs.offsetHeight : 0;
-                const top = content.getBoundingClientRect().top + window.scrollY - offset;
-                window.scrollTo({top: Math.max(0, top), behavior: 'auto'});
-            }
+            const canvas = document.querySelector('.canvas');
+            if (canvas) { canvas.scrollTop = 0; }
+            window.scrollTo({top: 0, behavior: 'auto'});
         });
         return Date.now();
     }
     """,
-    Output("tab-scroll-signal", "data"),
-    Input("phase-tabs", "value"),
+    Output("section-scroll-signal", "data"),
+    Input({"type": "rail-link", "section": ALL}, "n_clicks"),
     prevent_initial_call=True,
 )
 

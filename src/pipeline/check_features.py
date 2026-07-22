@@ -1,13 +1,25 @@
 """
-Step 10 - Feature selection check (correlation plus entropy / mutual information).
+Check the finished feature set. This step selects nothing.
 
-This step validates the feature set from steps 1 to 9 with two formal measures:
-    1. Pearson correlation between features, to catch any leftover multicollinearity.
-    2. Mutual information against TARGET (entropy-based), to gauge discriminative power.
+The name matters, because an earlier one (step10_feature_selection) implied this
+module chooses features. It does not. Nothing here rewrites
+features_clustering.csv; it only reports on what steps 1 to 9 already built.
 
-It does not rewrite features_clustering.csv. It only writes two small CSVs that
-back up why each feature is kept. The written discussion lives in the project-root
-REPORT.md, not here.
+Two measures, with deliberately unequal authority:
+
+    1. Pearson correlation between features, to catch leftover multicollinearity.
+       Correlation is computed feature-to-feature and never involves the label,
+       so acting on it is safe. This is what actually drove column removals,
+       back in steps 4 and 7.
+
+    2. Mutual information against TARGET, to show the feature set is not inert.
+       This is REPORTED ONLY and must never drive a drop. Selecting features by
+       their association with TARGET would make an unsupervised segmentation
+       covertly supervised, and it would make the Phase 4 backtest circular:
+       Section 8 tests the clusters against TARGET, which is only meaningful
+       because TARGET never touched the clustering.
+
+The reasoning is written out in REPORT.md Section 11b.1.
 
 Output:
   results/phase1_preprocessing/feature_importance.csv
@@ -94,7 +106,7 @@ def run() -> None:
         train_target = aligned["TARGET"].reset_index(drop=True)
         train_features = aligned.drop(columns=["SK_ID_CURR", "TARGET"]).reset_index(drop=True)
     else:
-        # Fallback: positional alignment (train rows are stacked first in step3).
+        # Fallback: positional alignment (train rows are stacked first in join_to_applicant).
         train_features = features_df.iloc[:n_train].reset_index(drop=True)
         train_target = target_df["TARGET"].reset_index(drop=True)
     log(f"  Aligned for MI: {train_features.shape[0]:,} train rows, {train_features.shape[1]} features")

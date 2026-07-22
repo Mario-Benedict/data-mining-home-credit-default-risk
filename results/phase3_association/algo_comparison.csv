@@ -1,5 +1,5 @@
 Algoritma,Sample,Rules
-apriori,"356,255",1943
-fpgrowth,"356,255",1943
-eclat,"356,255",1943
-fpgrowth_per_cluster,segment denominators,3503
+apriori,"356,255",1077
+fpgrowth,"356,255",1077
+eclat,"356,255",1077
+fpgrowth_per_cluster,segment denominators,3439
