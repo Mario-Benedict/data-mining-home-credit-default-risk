@@ -7,13 +7,21 @@ venv
 results/phase4_anomaly/*.csv
 
 # Keep the compact, reproducible Phase 4 summaries used by the dashboard and
-# reports. Large row-level detector matrices and OOF predictions remain ignored.
+# reports. Large row-level detector matrices remain ignored.
+#
+# anomaly_investigation.csv is the exception to "keep it small": the
+# dashboard reads it directly at startup, so it must stay tracked even
+# though it is a few MB larger than the other summaries here.
+!results/phase4_anomaly/anomaly_investigation.csv
 !results/phase4_anomaly/anomaly_driver_summary.csv
 !results/phase4_anomaly/anomaly_review_by_segment.csv
 !results/phase4_anomaly/detector_jaccard_overlap.csv
 !results/phase4_anomaly/pca_anomaly_sample.csv
-!results/phase4_anomaly/cluster_default_backtest_metrics.csv
-!results/phase4_anomaly/cluster_default_confusion_matrix.csv
-!results/phase4_anomaly/cluster_default_policy_sweep.csv
-!results/phase4_anomaly/cluster_default_pr_curve.csv
-!results/phase4_anomaly/cluster_default_rates.csv
+!results/phase4_anomaly/anomaly_queue_route_summary.csv
+!results/phase4_anomaly/segment_credit_concentration.csv
+!results/phase4_anomaly/review_trigger_register.csv
+!results/phase4_anomaly/anomaly_summary.csv
+!results/phase4_anomaly/ensemble_single_axis_sensitivity.csv
+!results/phase4_anomaly/lof_crossfit_diagnostic.csv
+!results/phase4_anomaly/mahalanobis_diagnostics.csv
+!results/phase4_anomaly/detector_jaccard_overlap_denominators.csv
