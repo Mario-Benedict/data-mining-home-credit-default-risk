@@ -1,0 +1,5 @@
+measure,value,business_interpretation
+Applications,356255,One application portfolio; every phase reads the same population
+Source files,8,"One application table assembled from two files, plus five behavioural history sources across six files"
+History sources per applicant,5,"Bureau, previous applications, POS or cash loans, instalments, card balances"
+Applications with a bureau record,305811,"Evidence availability, not a credit-quality statement"

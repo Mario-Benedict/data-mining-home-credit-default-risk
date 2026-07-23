@@ -1,99 +1,75 @@
-# Home Credit Default Risk, a KDD Project (Phases 1 to 5)
+# Home Credit: application portfolio discovery
 
-An academic data mining project that applies the KDD (Knowledge Discovery in Databases) methodology to the Home Credit Default Risk dataset. All 356,255 applications are used (307,511 train plus 48,744 test, combined because the process is unsupervised) together with 5 relational tables, the largest holding 27.3 million rows.
+This project follows the KDD process to study the Home Credit application portfolio through preprocessing, segmentation, association-rule mining, anomaly review, and an interactive dashboard.
 
-The full written report is [REPORT.md](REPORT.md) at the project root. Supporting documents (per-phase rationale, process validation, presentation outline) live in `reports/`.
+The goal is business discovery, not applicant scoring. The portfolio is analyzed as one unlabeled population of 356,255 applications. An out-of-scope outcome column present in one raw source file is removed at ingestion; no phase, finding, or chart reads it.
 
-## Folder structure
+The full method rationale, evidence boundaries, and business interpretation are in [REPORT.md](REPORT.md).
 
-```
-.
-├── datasets/                         # Raw CSVs (Kaggle) + Phase 1 output
-│   ├── application_train.csv         # 307K rows, 122 columns + TARGET
-│   ├── application_test.csv          # 48K rows
-│   ├── bureau.csv, bureau_balance.csv
-│   ├── credit_card_balance.csv, installments_payments.csv
-│   ├── POS_CASH_balance.csv, previous_application.csv
-│   └── final/
-│       ├── features_clustering.csv   # Phase 1 output (356,255 x SK_ID_CURR + 47 features)
-│       ├── cluster_labels.csv        # Phase 2 output (ROW_ID + SK_ID_CURR + labels from 3 algorithms)
-│       └── cluster_names.csv         # Phase 2 output: cluster_id to business-name mapping.
-│                                     #   Downstream MUST read this file, because cluster
-│                                     #   numbering shifts between runs.
-│
-├── docs/                             # Project brief (PDF)
-│
-├── notebooks/
-│   ├── exploratory_data_analysis.ipynb   # Phase 1 EDA
-│   ├── phase2_clustering.ipynb           # Phase 2, segmentation
-│   ├── phase3_association.ipynb          # Phase 3, rule mining (full data)
-│   └── phase4_anomaly.ipynb              # Phase 4, anomaly detection (full data, 5 detectors)
-│
-├── src/
-│   ├── run_pipeline.py               # Phase 1 entry point. Prefect flow; falls back to
-│   │                                 #   plain Python when Prefect is not installed
-│   └── pipeline/                     # 10 modular steps; config.py holds every threshold
-│                                     #   with its EDA justification
-│
-├── dashboard/
-│   └── app.py                        # Phase 5, interactive Plotly Dash dashboard
-│
-├── REPORT.md                         # The hand-written knowledge discovery report (all phases)
-├── reports/                          # Supporting hand-written documents
-│   ├── reasoning_validation.md       # Detailed rationale behind every decision, per phase
-│   ├── validation_report.md          # End-to-end process audit with the final figures
-│   ├── knowledge_discovery_report.md # Business-facing summary of the findings
-│   └── presentation_outline.md       # 10-minute presentation plan + Mining Expo answers
-│
-└── results/                          # Per-phase artefacts (CSV/PNG, all regenerated on re-run)
-    ├── phase1_preprocessing/
-    ├── phase2_clustering/
-    ├── phase3_association/
-    └── phase4_anomaly/
+## Three findings that matter
+
+1. Repayment-Stress History and Historical Card-Use Intensity contain 17.44% of applications but account for 69.28% of the targeted-review queue. They need separate specialist workflows rather than one broad risk label.
+2. Larger-Loan Affordability contains 34.36% of applications yet carries 52.98% of the portfolio's recorded loan amounts and 46.63% of its scheduled payment amounts. Amount concentration and application volume are different control questions, and affordability verification matters most exactly where history looks routine.
+3. Prior refusals and late repayment often appear together. Among 36,868 applications with at least three prior refusals, 60.08% also have recorded instalment lateness, compared with 44.47% across the portfolio. This is a review prompt, not an automatic decline reason.
+
+## Portfolio results
+
+| Result | Value |
+|---|---:|
+| Application portfolio | 356,255 applications |
+| Governed clustering features | 42 |
+| Business segments | 5 |
+| K=5 seed stability | ARI 0.9950-0.9965; mean 0.9955 |
+| Selected cross-source patterns | 12 non-trivial review patterns |
+| Targeted-review queue | 6,404 applications, or 1.80% of the portfolio |
+| Queue entry routes | 3,980 by detector consensus; 2,424 by an extreme single-axis value |
+| Outlier typology | 4,334 point; 2,056 contextual; 14 collective (sampled) |
+
+Cluster names describe recurring evidence profiles, not grades of customer risk. Association patterns describe co-occurrence, not causality. Anomaly flags determine what a reviewer should verify next; they do not approve, decline, price, rank, or change a limit.
+
+## Run the project
+
+From the repository root:
+
+```powershell
+python src/run_pipeline.py
+python scripts/execute_notebook.py notebooks/exploratory_data_analysis.ipynb --timeout 900
+python scripts/execute_notebook.py notebooks/phase2_clustering.ipynb --timeout 1200
+python scripts/build_linkage_comparison.py
+python scripts/execute_notebook.py notebooks/phase3_association.ipynb --timeout 1200
+python scripts/execute_notebook.py notebooks/phase4_anomaly.ipynb --timeout 3600
+python scripts/build_business_artifacts.py
+python scripts/validate_business_findings.py
+python dashboard/app.py
 ```
 
-## Setup
+The dashboard runs at `http://127.0.0.1:8050`.
 
-```bash
-python -m venv env
-./env/Scripts/activate           # Windows
-source env/bin/activate          # Linux/Mac
-pip install -r requirements.txt
+Run the phases in order. Phase 3, Phase 4, and the final validator reject stale IDs, names, counts, and evidence instead of silently combining incompatible runs.
+
+With fixed data, code, library versions, and random states, the results are reproducible. Cluster integers remain arbitrary and may change when the data or software changes. Downstream interpretation therefore joins through the names in `cluster_names.csv`.
+
+`src/run_pipeline.py` uses direct local execution by default. Set `HOME_CREDIT_USE_PREFECT=1` only when a compatible Prefect and FastAPI environment is available.
+
+## Repository layout
+
+```text
+src/run_pipeline.py    Phase 1 entry point
+src/domain_credit.py   domain logic and record-level review reasoning
+src/pipeline/          preprocessing steps in execution order
+notebooks/             EDA and Phases 2-4
+scripts/               notebook runner, evidence rebuilders, final validator
+results/               auditable CSV and PNG artifacts by phase
+dashboard/             Plotly Dash application
+datasets/              raw inputs and prepared feature tables
 ```
 
-## How to run (the order is mandatory)
+Phase 1 creates three applicant-level views because segmentation, review explanations, and anomaly detection need different treatments.
 
-```bash
-# Phase 1, preprocessing (pipeline script, Prefect orchestration)     ~13 minutes
-PYTHONIOENCODING=utf-8 python src/run_pipeline.py
+| Matrix | Treatment | Used by |
+|---|---|---|
+| `features_business.csv` | Readable source-scale values and audit fields | Association rules, record review, dashboard text |
+| `features_clustering.csv` | Continuous values bounded at p0.5 and p99.5, then standardized | PCA, K-Means, DBSCAN, Ward |
+| `features_anomaly.csv` | Standardized without clipping | Phase 4 anomaly detectors |
 
-# Phase 2, clustering                                                  ~8 minutes
-PYTHONIOENCODING=utf-8 jupyter nbconvert --to notebook --execute --inplace notebooks/phase2_clustering.ipynb --ExecutePreprocessor.timeout=3000
-
-# Phase 3, association rules                                           ~4 minutes
-PYTHONIOENCODING=utf-8 jupyter nbconvert --to notebook --execute --inplace notebooks/phase3_association.ipynb --ExecutePreprocessor.timeout=2400
-
-# Phase 4, anomaly detection                                           ~10 minutes
-PYTHONIOENCODING=utf-8 jupyter nbconvert --to notebook --execute --inplace notebooks/phase4_anomaly.ipynb --ExecutePreprocessor.timeout=3600
-
-# Phase 5, dashboard
-python dashboard/app.py          # open http://127.0.0.1:8050
-```
-
-Phases 3 and 4 carry a guard: if `cluster_labels.csv` does not align with `features_clustering.csv` (a stale artefact from an older run), execution fails loudly with a clear message. The fix is to re-run Phase 2.
-
-## What each phase does, in one paragraph
-
-Phase 1 turns 7 raw CSVs into one clean table: 356,255 rows with 47 standardized numeric features and zero missing values, plus `SK_ID_CURR` as an identifier. Feature selection uses both required measures: a Pearson correlation audit (perfectly collinear columns removed, remaining pairs documented) and entropy-based mutual information against the default label.
-
-Phase 2 finds 5 customer segments with K-Means (K=5, chosen by elbow and silhouette), validates them with Ward hierarchical clustering (agreement 0.55) and dendrograms across three linkage methods, and uses DBSCAN on a UMAP embedding as a density-based noise detector whose isolated points feed the anomaly phase. The id-to-name mapping is stored in `cluster_names.csv` because numbering permutes between runs.
-
-Phase 3 discretizes 7 dimensions by quantile and runs Apriori, FP-Growth, and ECLAT over all 356,255 transactions. The three algorithms find identical rule sets, and 15 final rules survive the lift, confidence, and redundancy filters, three per segment.
-
-Phase 4 scores every application with six detectors: a skew-adjusted IQR fence and Z-score (univariate), robust Mahalanobis distance, Isolation Forest, and Local Outlier Factor (multivariate), and the Phase 2 DBSCAN noise flag (density). The IQR fence adjusts for skew (Hubert and Vandervieren, 2008), runs only on continuous columns, abstains where a column's middle 50 percent collapses onto one shared value, and calibrates its fence multiplier per column to a fixed 1 percent flag rate instead of reusing one constant everywhere; an earlier flat, uncalibrated version flagged 56.5 percent of the portfolio, and the fix brought it to 0.4 percent. A row flagged by three or more of the six is a high-confidence anomaly (2,404 rows, 0.7 percent). Each case gets a theory label (global, contextual, collective), a business label (a probable data quality issue, rare but valid, or risk signal), and a short, per-record recommendation generated from that case's own data, all tied to real applicant IDs.
-
-Phase 5 is the Plotly Dash dashboard for a business audience and the written reports. Every number on the dashboard is read from the result artefacts, so a re-run keeps it in sync, and the header and headline KPIs change with the section being viewed. The honesty test is shown up front: segments and anomaly tiers stratify real default rates in strict, exception-free order from the portfolio baseline; the only ordering that does not come out clean at this sample size is among the three anomaly business types, reported openly rather than hidden.
-
-## Technical notes
-
-Always run with `PYTHONIOENCODING=utf-8` on Windows so the logs do not hit encoding errors. Hierarchical clustering on 356K rows cannot use quadratic memory, so Ward runs on a representative sample and the rest of the data is assigned to the nearest centre; DBSCAN is limited to a 50K sample for a similar reason. All random seeds are 42, so the groupings are stable between runs, but the cluster numbering is not: always read `cluster_names.csv`. `SK_ID_CURR` flows from the pipeline through to the anomaly investigation so every finding can be traced to a real applicant.
+Each pipeline step consumes the applicant-level frame returned by the previous step. Historical tables are aggregated to `SK_ID_CURR` before joining so that one applicant is never multiplied by transaction-level rows.

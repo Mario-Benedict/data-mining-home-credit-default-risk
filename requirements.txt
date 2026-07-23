@@ -17,7 +17,6 @@ seaborn==0.13.2
 six==1.17.0
 threadpoolctl==3.6.0
 tzdata==2026.2
-networkx>=3.0
 plotly==6.8.0
 dash==4.2.0
 prefect==3.7.4
@@ -26,4 +25,3 @@ numba==0.65.1
 pynndescent==0.6.0
 statsmodels==0.14.6
 jupyter
-nbconvert

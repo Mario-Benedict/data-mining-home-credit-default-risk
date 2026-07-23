@@ -1,0 +1,2 @@
+comparison,adjusted_rand_index,normalized_mutual_information
+K-Means vs sampled Ward nearest-centre assignment,0.5841541848342071,0.5925408420463917

@@ -1,0 +1,3 @@
+scored_group,scoring_model,rows_scored,scoring_reference_rows,rows_seen_during_scoring_model_fit,unseen_share
+Reference A rows,LOF fitted on reference B,20000,20000,0,1.0
+Rows outside reference A,LOF fitted on reference A,336255,20000,0,1.0

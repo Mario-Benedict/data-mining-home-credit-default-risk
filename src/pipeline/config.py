@@ -22,7 +22,8 @@ PATHS = {
 
 # Sentinel value (EDA Section 4, 6)
 # DAYS_EMPLOYED = 365243 encodes pensioners/unemployed; not a real duration.
-# Default rate of sentinel group (5.4%) differs from non-sentinel (8.7%).
+# The train-only TARGET=1 rate differs across the sentinel and non-sentinel
+# groups. This is descriptive and does not make the sentinel a risk rule.
 DAYS_EMPLOYED_SENTINEL = 365_243
 
 # Housing column triplication (EDA Section 7)
@@ -124,8 +125,8 @@ ORG_TYPE_MAP = {
     "Postal":                 "Utilities",
     "Cleaning":               "Utilities",
     "Emergency":              "Utilities",
-    # "XNA" never reaches this map in practice: step4 converts XNA -> NaN
-    # BEFORE applying the mapping, and step8 later fills that NaN with
+    # "XNA" never reaches this map in practice: clean_structure converts XNA -> NaN
+    # BEFORE applying the mapping, and encode_categoricals later fills that NaN with
     # "Unknown". The entry stays here so the map is complete if anyone
     # reuses it outside the pipeline order.
     "XNA":                    "Inapplicable",
@@ -141,10 +142,10 @@ WINSORIZE_CONFIG = {
     "AMT_REQ_CREDIT_BUREAU_MON": 0.99,
     "AMT_REQ_CREDIT_BUREAU_YEAR": 0.99,
 }
-CAP_CONFIG = {
-    "CNT_CHILDREN":    10,  # max=19 is biologically implausible; cap at defensible limit
-    "CNT_FAM_MEMBERS": 15,
-}
+# Household counts are rare at the upper tail, but rarity alone does not prove
+# a capture error and no source rule supports a hard cap. They remain unchanged
+# in the readable audit data and do not enter the governed clustering matrix.
+CAP_CONFIG = {}
 
 # Log-transform columns (EDA Section 4)
 # Applied after winsorizing. All are right-skewed financial amounts.
@@ -183,7 +184,7 @@ ZERO_IMPUTE_COLS = ["OWN_CAR_AGE"] + BUILDING_MODE_COLS
 MODE_IMPUTE_COLS = ["NAME_TYPE_SUITE"]
 
 # EXT_SOURCE_1: 56.4% missing. Impute with median AFTER creating FLAG_EXT_SOURCE_1_MISSING.
-# OCCUPATION_TYPE: 31.4% missing. Imputed with mode per income type group in step5.
+# OCCUPATION_TYPE: 31.4% missing. Imputed with mode per income type group in flag_and_impute_missing.
 
 # Categorical fields with structural absence -> fill with explicit label.
 CATEGORICAL_FILL_UNKNOWN = [
@@ -195,43 +196,61 @@ CATEGORICAL_FILL_UNKNOWN = [
 
 # Phase 2 clustering feature set
 # Every entry is traceable to EDA Section 10 Justification Table.
-# Sections referenced: §4 (DAYS encoding), §5 (rare cats), §6 (outliers),
-# §10 (justification table), §11-12 (EXT_SOURCE independence + age link),
-# §13 (bureau absence), §14 (DEF_30 sub-population), §15 (installment DPD).
+# Sections referenced: Section 4 (DAYS encoding), Section 5 (rare cats), Section 6 (outliers),
+# Section 10 (justification table), Section 11-12 (EXT_SOURCE independence + age link),
+# Section 13 (bureau absence), Section 14 (DEF_30 sub-population), Section 15 (installment DPD).
 CLUSTERING_FEATURES = [
-    # Financial capacity (EDA §6, §10: log transform + winsorise justified)
+    # Financial capacity (EDA Section 6, Section 10: log transform + winsorise justified)
     "AMT_INCOME_TOTAL",          # log-transformed; winsorised at p99
     "AMT_CREDIT",                # log-transformed; skewness 1.2-1.6
     "AMT_ANNUITY",               # log-transformed
     "CREDIT_TO_INCOME",          # leverage ratio (derived from EDA-justified cols)
     "ANNUITY_TO_INCOME",         # debt-service burden ratio
-    "CREDIT_TERM_MONTHS",        # implied loan duration (AMT_CREDIT / AMT_ANNUITY)
+    "CREDIT_TO_ANNUITY",         # payment-size proxy only; not contractual duration
 
-    # Demographics (EDA §4, §10: DAYS_BIRTH -> positive years; sentinel flag)
-    "YEARS_BIRTH",               # abs(DAYS_BIRTH)/365.25 - negative encoding fixed
-    "YEARS_EMPLOYED",            # abs(DAYS_EMPLOYED)/365.25; 0 for sentinel rows
-    "FLAG_SENTINEL_EMPLOYED",    # EDA §10: 18% pensioners/unemployed; 5.4% vs 8.7% default
-    "CNT_CHILDREN",              # capped at 10 (EDA §10: implausible values)
-    "CODE_GENDER",               # binary F=1 M=0; XNA (4 rows) -> NaN (EDA §10)
+    # Employment and product context.
+    #
+    # THE SPECIFIED PROTECTED AND HIGH-RISK PROXY ATTRIBUTES ARE EXCLUDED.
+    # Removed here on purpose: CODE_GENDER, YEARS_BIRTH (age), CNT_CHILDREN
+    # (familial status), REGION_RATING_CLIENT_W_CITY (geographic proxy /
+    # redlining risk), NAME_EDUCATION_TYPE, NAME_INCOME_TYPE_FREQ and
+    # ORGANIZATION_TYPE_FREQ (socioeconomic proxies), and
+    # DEF_30_CNT_SOCIAL_CIRCLE_BIN (guilt-by-association: the applicant's
+    # acquaintances' arrears are not the applicant's conduct).
+    #
+    # The same governance should apply throughout the mining work. Phase 3
+    # already rejects protected and life-stage vocabulary from its rules, so
+    # these fields should not shape the segmentation that drives review actions.
+    #
+    # All of these remain in features_business.csv. They are still used to
+    # PROFILE and DESCRIBE segments after the fact, and for fairness
+    # monitoring. They simply do not get to FORM the segments.
+    "YEARS_EMPLOYED",            # abs(DAYS_EMPLOYED)/365; 0 for sentinel rows
+    # Structural missingness flag retained so the placeholder is not treated as
+    # a real duration. It is a potential life-stage proxy and therefore needs a
+    # fairness sensitivity check before any operational use.
+    "FLAG_SENTINEL_EMPLOYED",
     "NAME_CONTRACT_TYPE",        # binary Cash=1 Revolving=0
-    "REGION_RATING_CLIENT_W_CITY",# retained from correlated pair (EDA §10: drop non-city)
     "OWN_CAR_AGE",               # 0 for no-car applicants (structural imputation)
-    "FLAG_NO_CAR",               # EDA §10: missingness = no car; binary indicator
-    "FLAG_NO_HOUSING_DATA",      # EDA §10: 47-70% housing cols absent -> single indicator
+    "FLAG_NO_CAR",               # EDA Section 10: missingness = no car; binary indicator
+    "FLAG_NO_HOUSING_DATA",      # EDA Section 10: 47-70% housing cols absent -> single indicator
 
-    # External credit scores (EDA §11-12: strongest predictors; all independent)
-    "EXT_SOURCE_1",              # strongest default predictor; 56.4% missing -> median
-    "EXT_SOURCE_2",              # r < 0.22 with EXT_SOURCE_1 - independent signal
-    "EXT_SOURCE_3",              # r < 0.22 with EXT_SOURCE_1 - independent signal
-    "FLAG_EXT_SOURCE_1_MISSING", # EDA §10: thin credit file indicator
+    # Opaque external scores. Pairwise correlation is modest, but that does not
+    # prove independent source construction or justify double-counting.
+    "EXT_SOURCE_1",              # 54.4% missing in combined data -> median + flag
+    "EXT_SOURCE_2",
+    "EXT_SOURCE_3",
+    "FLAG_EXT_SOURCE_1_MISSING", # score unavailable: uncertainty indicator
+    "FLAG_EXT_SOURCE_2_MISSING",
+    "FLAG_EXT_SOURCE_3_MISSING",
 
     # Credit enquiry frequency
-    "AMT_REQ_CREDIT_BUREAU_YEAR", # winsorised at p99 (EDA §10)
+    "AMT_REQ_CREDIT_BUREAU_YEAR", # winsorised at p99 (EDA Section 10)
 
-    # Bureau history (EDA §13: absence = thin file; §15: DPD signal)
-    "FLAG_NO_BUREAU",            # 1,700 applicants with no bureau records
+    # Bureau evidence availability and observed history
+    "FLAG_NO_BUREAU",            # 50,444/356,255 combined applications (14.16%)
     "BUREAU_COUNT",              # credit history depth
-    "BUREAU_ACTIVE_RATIO",       # current leverage level
+    "BUREAU_ACTIVE_RATIO",       # share of bureau records marked active at extract
     "BUREAU_DEBT_TO_CREDIT_RATIO",# external debt burden
     "BUREAU_DAYS_CREDIT_MEAN",   # average age of credit lines
     "BUREAU_BB_DPD_RATIO_MEAN",  # share of months with any DPD
@@ -242,10 +261,11 @@ CLUSTERING_FEATURES = [
     "PREV_APPROVAL_RATE",        # historical approval signal
     "PREV_REFUSED_COUNT",        # refusal history - risk signal
 
-    # Installment repayment (EDA §15: 8.4% late; "mean DPD, max DPD,
+    # Installment repayment (EDA Section 15: 8.4% late; "mean DPD, max DPD,
     #   pct late, pct severely late >30d" prescribed in justification table)
     "INST_DPD_MEAN",
     "INST_DPD_MAX",
+    "INST_COUNT",                 # distinguishes clean observed history from no history
     "INST_LATE_RATIO",
     "INST_SEVERE_LATE_RATIO",    # >30d DPD
     "INST_PAYMENT_RATIO_MEAN",   # mean(paid/owed) - underpayment signal
@@ -254,24 +274,29 @@ CLUSTERING_FEATURES = [
     "POS_SK_DPD_MEAN",
     "POS_MONTHS_COUNT",
 
-    # Credit card (EDA §10: "mean and max utilization; months of history")
+    # Credit card (EDA Section 10: "mean and max utilization; months of history")
     "CC_UTILIZATION_MEAN",
     "CC_UTILIZATION_MAX",
     "CC_SK_DPD_MEAN",
     "CC_AMT_BALANCE_MEAN",
     "CC_MONTHS_COUNT",
 
-    # Categorical, encoded for distance-based clustering (no OHE)
-    "NAME_EDUCATION_TYPE",        # ordinal 0-4 (education ladder); SES proxy
-    "NAME_INCOME_TYPE_FREQ",      # frequency-encoded income source (mainstream to niche)
-    "ORGANIZATION_TYPE_FREQ",     # frequency-encoded employer sector
+    # No encoded socioeconomic categoricals here by design. NAME_EDUCATION_TYPE,
+    # NAME_INCOME_TYPE_FREQ and ORGANIZATION_TYPE_FREQ are still produced by the
+    # encoding steps and kept in the business artifact for profiling, but they
+    # are proxies for socioeconomic status and do not shape the segments.
+    #
+    # Frequency encoding had a second problem worth recording: it maps a
+    # category to how common it is, so two unrelated sectors with similar
+    # frequency collapse onto the same coordinate. That manufactures similarity
+    # between applicants who have nothing in common.
 ]
 
 # Categorical encoding for DISTANCE-BASED clustering
 # Why not one-hot encoding (OHE)?
 #  K-Means works on Euclidean distance. OHE turns one nominal column into N
 #  binary columns, which (a) inflates dimensionality with sparse axes, and
-#  (b) forces every pair of categories to sit at the SAME distance √2 apart,
+#  (b) forces every pair of categories to sit at the SAME distance sqrt2 apart,
 #  even when some categories are far more alike than others. For a 12-sector
 #  ORGANIZATION_TYPE that means ~11 extra axes that collectively outweigh a
 #  single standardized continuous feature. An earlier run also produced a

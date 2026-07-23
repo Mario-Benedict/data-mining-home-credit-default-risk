@@ -1,0 +1,6 @@
+issue,affected_rows,affected_share,business_meaning,treatment
+Extreme income above p99,3549,0.009961965446099003,Rare amount that can dominate Euclidean distance; not automatically an error,Cap the clustering value at p99; preserve the rule and audit trail
+Employment sentinel,64648,0.18146552329090118,"Pensioner or non-employed status marker, not 1,000 years of work",Replace with missing duration and retain a sentinel flag
+Housing detail unavailable,171055,0.4801476470505677,Property record not available; not proof of poor credit quality,Structural zero plus one no-housing-data indicator
+External score 1 unavailable,193910,0.5443011326156826,Score uncertainty or thin information; not adverse behaviour,Median imputation plus an explicit missing-score flag
+No car-age value,235241,0.660316346437243,Usually structural absence because the applicant has no car,Set age to zero and retain a no-car indicator
