@@ -11,13 +11,14 @@ AMT_REQ_CREDIT_BUREAU_* (QRT, MON, YEAR)
   Extreme spikes (max=261 for QRT vs p99~5). Cap at p99.
 
 CNT_CHILDREN / CNT_FAM_MEMBERS
-  Max values (19 / 20) are biologically implausible data entry errors.
-  Hard-cap at defensible upper limits (10 / 15).
+  Large values are rare, but rarity does not establish a capture error. Leave
+  the source values unchanged; these proxy-sensitive fields do not enter the
+  governed clustering or anomaly matrices.
 
 DEF_30_CNT_SOCIAL_CIRCLE / DEF_60_CNT_SOCIAL_CIRCLE
-  EDA Section 8: 11.4% "outlier" rate is a REAL behavioral sub-population
-  (applicants embedded in high-default social circles). Do NOT winsorize.
-  Bin into 0 / 1 / 2+ ordered categories instead.
+  A non-zero count is common enough that it is not a data-error outlier. Keep
+  the raw business value, but exclude this social/proxy feature from the
+  governed clustering and anomaly matrices.
 
 OBS_30 / OBS_60 already handled in engineer_ratios (OBS_60 dropped as redundant with OBS_30).
 """

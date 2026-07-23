@@ -1,0 +1,26 @@
+Segment,Evidence source,observed_applications,applications,coverage,population
+Historical Card-Use Intensity,At least one external score,54518,54518,1.0,All applications in the portfolio
+Historical Card-Use Intensity,Bureau history,47746,54518,0.8757841446861587,All applications in the portfolio
+Historical Card-Use Intensity,Instalment history,54512,54518,0.9998899446054514,All applications in the portfolio
+Historical Card-Use Intensity,Previous Home Credit card history,54518,54518,1.0,All applications in the portfolio
+Historical Card-Use Intensity,Previous applications,53887,54518,0.98842584100664,All applications in the portfolio
+History-Rich Credit User,At least one external score,51424,51426,0.9999611091665694,All applications in the portfolio
+History-Rich Credit User,Bureau history,48816,51426,0.9492474623731186,All applications in the portfolio
+History-Rich Credit User,Instalment history,51379,51426,0.9990860654143818,All applications in the portfolio
+History-Rich Credit User,Previous Home Credit card history,15447,51426,0.3003733520009334,All applications in the portfolio
+History-Rich Credit User,Previous applications,51415,51426,0.9997861004161319,All applications in the portfolio
+Larger-Loan Affordability,At least one external score,122326,122395,0.9994362514808611,All applications in the portfolio
+Larger-Loan Affordability,Bureau history,104836,122395,0.8565382572817517,All applications in the portfolio
+Larger-Loan Affordability,Instalment history,112433,122395,0.9186077862657789,All applications in the portfolio
+Larger-Loan Affordability,Previous Home Credit card history,17009,122395,0.1389680951019241,All applications in the portfolio
+Larger-Loan Affordability,Previous applications,112420,122395,0.9185015727766657,All applications in the portfolio
+Lower-Intensity Credit Footprint,At least one external score,120190,120294,0.9991354514772142,All applications in the portfolio
+Lower-Intensity Credit Footprint,Bureau history,97911,120294,0.8139308693700434,All applications in the portfolio
+Lower-Intensity Credit Footprint,Instalment history,113641,120294,0.9446938334414019,All applications in the portfolio
+Lower-Intensity Credit Footprint,Previous Home Credit card history,14584,120294,0.12123630438758376,All applications in the portfolio
+Lower-Intensity Credit Footprint,Previous applications,113613,120294,0.944461070377575,All applications in the portfolio
+Repayment-Stress History,At least one external score,7618,7622,0.9994752033586985,All applications in the portfolio
+Repayment-Stress History,Bureau history,6502,7622,0.8530569404355812,All applications in the portfolio
+Repayment-Stress History,Instalment history,7622,7622,1.0,All applications in the portfolio
+Repayment-Stress History,Previous Home Credit card history,2000,7622,0.26239832065074786,All applications in the portfolio
+Repayment-Stress History,Previous applications,7522,7622,0.9868800839674626,All applications in the portfolio

@@ -54,7 +54,7 @@ def aggregate_bureau(bureau: pd.DataFrame, bureau_bal: pd.DataFrame) -> pd.DataF
 
     Key features produced:
       BUREAU_COUNT             - credit history depth
-      BUREAU_ACTIVE_COUNT/RATIO - current leverage level
+      BUREAU_ACTIVE_COUNT/RATIO - share recorded as active at the extract date
       BUREAU_CREDIT_SUM/DEBT   - total external debt exposure
       BUREAU_DAYS_CREDIT_MEAN  - average age of credit lines
       BB_DPD/SEVERE_DPD_RATIO  - historical repayment quality
@@ -165,9 +165,9 @@ def aggregate_installments(inst: pd.DataFrame) -> pd.DataFrame:
     """
     Aggregate installments_payments to one row per SK_ID_CURR.
 
-    DPD (days past due) is the most important signal here.
-    EDA Section 8: 8.4% of installments were late (DPD > 0);
-    applicants at the extreme right tail of DPD are in sustained default.
+    DPD (days past due) records historical repayment timing. Long delays send a
+    reviewer back to the source timeline; they do not establish legal default,
+    current hardship, or cure status by themselves.
 
     Key features produced:
       INST_DPD_MEAN/MAX        - repayment timeliness

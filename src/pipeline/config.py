@@ -22,7 +22,8 @@ PATHS = {
 
 # Sentinel value (EDA Section 4, 6)
 # DAYS_EMPLOYED = 365243 encodes pensioners/unemployed; not a real duration.
-# Default rate of sentinel group (5.4%) differs from non-sentinel (8.7%).
+# The train-only TARGET=1 rate differs across the sentinel and non-sentinel
+# groups. This is descriptive and does not make the sentinel a risk rule.
 DAYS_EMPLOYED_SENTINEL = 365_243
 
 # Housing column triplication (EDA Section 7)
@@ -141,10 +142,10 @@ WINSORIZE_CONFIG = {
     "AMT_REQ_CREDIT_BUREAU_MON": 0.99,
     "AMT_REQ_CREDIT_BUREAU_YEAR": 0.99,
 }
-CAP_CONFIG = {
-    "CNT_CHILDREN":    10,  # max=19 is biologically implausible; cap at defensible limit
-    "CNT_FAM_MEMBERS": 15,
-}
+# Household counts are rare at the upper tail, but rarity alone does not prove
+# a capture error and no source rule supports a hard cap. They remain unchanged
+# in the readable audit data and do not enter the governed clustering matrix.
+CAP_CONFIG = {}
 
 # Log-transform columns (EDA Section 4)
 # Applied after winsorizing. All are right-skewed financial amounts.
@@ -205,11 +206,11 @@ CLUSTERING_FEATURES = [
     "AMT_ANNUITY",               # log-transformed
     "CREDIT_TO_INCOME",          # leverage ratio (derived from EDA-justified cols)
     "ANNUITY_TO_INCOME",         # debt-service burden ratio
-    "CREDIT_TERM_MONTHS",        # implied loan duration (AMT_CREDIT / AMT_ANNUITY)
+    "CREDIT_TO_ANNUITY",         # payment-size proxy only; not contractual duration
 
     # Employment and product context.
     #
-    # PROTECTED AND PROXY ATTRIBUTES ARE EXCLUDED FROM THE SEGMENTATION.
+    # THE SPECIFIED PROTECTED AND HIGH-RISK PROXY ATTRIBUTES ARE EXCLUDED.
     # Removed here on purpose: CODE_GENDER, YEARS_BIRTH (age), CNT_CHILDREN
     # (familial status), REGION_RATING_CLIENT_W_CITY (geographic proxy /
     # redlining risk), NAME_EDUCATION_TYPE, NAME_INCOME_TYPE_FREQ and
@@ -217,27 +218,28 @@ CLUSTERING_FEATURES = [
     # DEF_30_CNT_SOCIAL_CIRCLE_BIN (guilt-by-association: the applicant's
     # acquaintances' arrears are not the applicant's conduct).
     #
-    # The reason is consistency of governance, not squeamishness. Phase 3
-    # already rejects protected and life-stage vocabulary from rules, and the
-    # supervised diagnostic already excludes age, education, income type,
-    # organisation type, and region rating. Applying those controls to a
-    # throwaway diagnostic while letting them shape the segmentation - the
-    # actual deliverable that drives review actions - was backwards.
+    # The same governance should apply throughout the mining work. Phase 3
+    # already rejects protected and life-stage vocabulary from its rules, so
+    # these fields should not shape the segmentation that drives review actions.
     #
     # All of these remain in features_business.csv. They are still used to
     # PROFILE and DESCRIBE segments after the fact, and for fairness
     # monitoring. They simply do not get to FORM the segments.
-    "YEARS_EMPLOYED",            # abs(DAYS_EMPLOYED)/365.25; 0 for sentinel rows
-    "FLAG_SENTINEL_EMPLOYED",    # EDA Section 10: 18% pensioners/unemployed; 5.4% vs 8.7% default
+    "YEARS_EMPLOYED",            # abs(DAYS_EMPLOYED)/365; 0 for sentinel rows
+    # Structural missingness flag retained so the placeholder is not treated as
+    # a real duration. It is a potential life-stage proxy and therefore needs a
+    # fairness sensitivity check before any operational use.
+    "FLAG_SENTINEL_EMPLOYED",
     "NAME_CONTRACT_TYPE",        # binary Cash=1 Revolving=0
     "OWN_CAR_AGE",               # 0 for no-car applicants (structural imputation)
     "FLAG_NO_CAR",               # EDA Section 10: missingness = no car; binary indicator
     "FLAG_NO_HOUSING_DATA",      # EDA Section 10: 47-70% housing cols absent -> single indicator
 
-    # External credit scores (EDA Section 11-12: strongest predictors; all independent)
-    "EXT_SOURCE_1",              # strongest default predictor; 56.4% missing -> median
-    "EXT_SOURCE_2",              # r < 0.22 with EXT_SOURCE_1 - independent signal
-    "EXT_SOURCE_3",              # r < 0.22 with EXT_SOURCE_1 - independent signal
+    # Opaque external scores. Pairwise correlation is modest, but that does not
+    # prove independent source construction or justify double-counting.
+    "EXT_SOURCE_1",              # 54.4% missing in combined data -> median + flag
+    "EXT_SOURCE_2",
+    "EXT_SOURCE_3",
     "FLAG_EXT_SOURCE_1_MISSING", # score unavailable: uncertainty indicator
     "FLAG_EXT_SOURCE_2_MISSING",
     "FLAG_EXT_SOURCE_3_MISSING",
@@ -245,10 +247,10 @@ CLUSTERING_FEATURES = [
     # Credit enquiry frequency
     "AMT_REQ_CREDIT_BUREAU_YEAR", # winsorised at p99 (EDA Section 10)
 
-    # Bureau history (EDA Section 13: absence = thin file; Section 15: DPD signal)
-    "FLAG_NO_BUREAU",            # 1,700 applicants with no bureau records
+    # Bureau evidence availability and observed history
+    "FLAG_NO_BUREAU",            # 50,444/356,255 combined applications (14.16%)
     "BUREAU_COUNT",              # credit history depth
-    "BUREAU_ACTIVE_RATIO",       # current leverage level
+    "BUREAU_ACTIVE_RATIO",       # share of bureau records marked active at extract
     "BUREAU_DEBT_TO_CREDIT_RATIO",# external debt burden
     "BUREAU_DAYS_CREDIT_MEAN",   # average age of credit lines
     "BUREAU_BB_DPD_RATIO_MEAN",  # share of months with any DPD

@@ -1,30 +1,33 @@
-# Home Credit Default Risk: Knowledge Discovery
+# Home Credit: application portfolio discovery
 
-KDD-process analysis of the Home Credit Default Risk portfolio: preprocessing, segmentation, association-rule mining, anomaly review, and an interactive dashboard.
+This project follows the KDD process to study the Home Credit application portfolio through preprocessing, segmentation, association-rule mining, anomaly review, and an interactive dashboard.
 
-The goal is portfolio discovery and business interpretation. Default prediction appears only as a train-only diagnostic, and the analysis is explicit that cluster membership is not accurate enough for applicant-level credit decisions.
+The goal is business discovery, not applicant scoring. The portfolio is analyzed as one unlabeled population of 356,255 applications. An out-of-scope outcome column present in one raw source file is removed at ingestion; no phase, finding, or chart reads it.
 
-**Full write-up, domain reasoning, every method decision, validation evidence, and business interpretation, is in [REPORT.md](REPORT.md).**
+The full method rationale, evidence boundaries, and business interpretation are in [REPORT.md](REPORT.md).
 
-## Headline results
+## Three findings that matter
 
-| Check | Result |
+1. Repayment-Stress History and Historical Card-Use Intensity contain 17.44% of applications but account for 69.28% of the targeted-review queue. They need separate specialist workflows rather than one broad risk label.
+2. Larger-Loan Affordability contains 34.36% of applications yet carries 52.98% of the portfolio's recorded loan amounts and 46.63% of its scheduled payment amounts. Amount concentration and application volume are different control questions, and affordability verification matters most exactly where history looks routine.
+3. Prior refusals and late repayment often appear together. Among 36,868 applications with at least three prior refusals, 60.08% also have recorded instalment lateness, compared with 44.47% across the portfolio. This is a review prompt, not an automatic decline reason.
+
+## Portfolio results
+
+| Result | Value |
 |---|---:|
-| Combined applications | 356,255 |
-| Train rows used for outcome metrics | 307,511 |
-| Test rows used for outcome metrics | 0 |
-| Clustering features | 42 (protected/proxy attributes excluded) |
-| K-Means segments | 5 |
-| K=5 seed stability (ARI) | 0.9936-0.9986 |
-| Final association rules | 18 (3 per segment + 3 portfolio-wide) |
-| Anomaly review queue | 5,914 (1.66%): 2,491 by detector consensus + 3,423 implausible single values |
-| Cluster alignment precision / recall | 10.05% / 35.51% |
-| Supervised diagnostic precision / recall | 17.67% / 62.43% |
-| End-to-end verification | 70 pass, 1 warning, 0 fail |
+| Application portfolio | 356,255 applications |
+| Governed clustering features | 42 |
+| Business segments | 5 |
+| K=5 seed stability | ARI 0.9950-0.9965; mean 0.9955 |
+| Selected cross-source patterns | 12 non-trivial review patterns |
+| Targeted-review queue | 6,404 applications, or 1.80% of the portfolio |
+| Queue entry routes | 3,980 by detector consensus; 2,424 by an extreme single-axis value |
+| Outlier typology | 4,334 point; 2,056 contextual; 14 collective (sampled) |
 
-The low cluster precision is expected rather than a defect. Clustering groups applications that look alike; it does not optimise `TARGET`. At a matched 28.52% review capacity an outcome-trained model improves both precision and recall by 1.76x. Use the segmentation for portfolio strategy and review design, not for decline decisions.
+Cluster names describe recurring evidence profiles, not grades of customer risk. Association patterns describe co-occurrence, not causality. Anomaly flags determine what a reviewer should verify next; they do not approve, decline, price, rank, or change a limit.
 
-## Run it
+## Run the project
 
 From the repository root:
 
@@ -32,49 +35,41 @@ From the repository root:
 python src/run_pipeline.py
 python scripts/execute_notebook.py notebooks/exploratory_data_analysis.ipynb --timeout 900
 python scripts/execute_notebook.py notebooks/phase2_clustering.ipynb --timeout 1200
+python scripts/build_linkage_comparison.py
 python scripts/execute_notebook.py notebooks/phase3_association.ipynb --timeout 1200
-python scripts/execute_notebook.py notebooks/phase4_anomaly.ipynb --timeout 1800
+python scripts/execute_notebook.py notebooks/phase4_anomaly.ipynb --timeout 3600
+python scripts/build_business_artifacts.py
+python scripts/validate_business_findings.py
 python dashboard/app.py
 ```
 
-The dashboard serves on `http://127.0.0.1:8050`.
+The dashboard runs at `http://127.0.0.1:8050`.
 
-Order matters, Phase 3 and Phase 4 assert against stale artefacts and fail rather than silently mixing runs.
+Run the phases in order. Phase 3, Phase 4, and the final validator reject stale IDs, names, counts, and evidence instead of silently combining incompatible runs.
 
-Cluster numbering permutes between runs even with a fixed seed, because centroid initialisation order is not stable. Everything downstream matches segments by **name** via `cluster_names.csv`; new analysis must do the same.
+With fixed data, code, library versions, and random states, the results are reproducible. Cluster integers remain arbitrary and may change when the data or software changes. Downstream interpretation therefore joins through the names in `cluster_names.csv`.
 
-`src/run_pipeline.py` uses direct local execution by default. Set `HOME_CREDIT_USE_PREFECT=1` only when a compatible Prefect/FastAPI environment is available.
+`src/run_pipeline.py` uses direct local execution by default. Set `HOME_CREDIT_USE_PREFECT=1` only when a compatible Prefect and FastAPI environment is available.
 
-## Layout
+## Repository layout
 
-```
-src/run_pipeline.py    single entry point for Phase 1
-src/domain_credit.py   domain logic, cluster backtest, anomaly reasoning
-src/pipeline/          the ten preprocessing steps, in execution order:
-    load_raw_tables          read the eight source CSVs
-    aggregate_histories      roll up 5 credit histories to applicant grain
-    join_to_applicant        stack train+test, join the histories
-    clean_structure          sentinels, rare categories, redundant columns
-    flag_and_impute_missing  flag missingness first, then impute
-    treat_outliers           winsorize, cap, bin
-    engineer_ratios          leverage and burden ratios, log transforms
-    encode_categoricals      ordinal and frequency encoding, no one-hot
-    build_matrices           the three output views (see below)
-    check_features          correlation + MI report; selects nothing
-notebooks/             EDA + phases 2-4
-results/               CSV and PNG artefacts per phase, plus validation/
-dashboard/             Plotly Dash app
-datasets/              raw CSVs and final feature tables
+```text
+src/run_pipeline.py    Phase 1 entry point
+src/domain_credit.py   domain logic and record-level review reasoning
+src/pipeline/          preprocessing steps in execution order
+notebooks/             EDA and Phases 2-4
+scripts/               notebook runner, evidence rebuilders, final validator
+results/               auditable CSV and PNG artifacts by phase
+dashboard/             Plotly Dash application
+datasets/              raw inputs and prepared feature tables
 ```
 
-Step 9 produces three views of the same applicants, because each downstream
-phase needs a different trade-off:
+Phase 1 creates three applicant-level views because segmentation, review explanations, and anomaly detection need different treatments.
 
 | Matrix | Treatment | Used by |
 |---|---|---|
-| `features_business.csv` | Readable values plus audit trail | Case review, rules, dashboard text |
-| `features_clustering.csv` | Clipped at p0.5/p99.5, standardized | K-Means, DBSCAN, Ward |
-| `features_anomaly.csv` | Standardized, **not** clipped | Phase 4 detectors |
+| `features_business.csv` | Readable source-scale values and audit fields | Association rules, record review, dashboard text |
+| `features_clustering.csv` | Continuous values bounded at p0.5 and p99.5, then standardized | PCA, K-Means, DBSCAN, Ward |
+| `features_anomaly.csv` | Standardized without clipping | Phase 4 anomaly detectors |
 
-The step number is the execution order and it is strict: each step consumes the
-frame the previous one returned.
+Each pipeline step consumes the applicant-level frame returned by the previous step. Historical tables are aggregated to `SK_ID_CURR` before joining so that one applicant is never multiplied by transaction-level rows.

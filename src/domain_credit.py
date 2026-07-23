@@ -7,11 +7,10 @@ unsupervised pattern into an approval/decline decision.
 Design rules
 ------------
 * Use unscaled business values for every threshold and explanation.
-* Separate impossible/inconsistent data from repayment-risk evidence and from
-  a rare-but-plausible customer profile.
+* Separate inconsistent data from repayment evidence and from a rare but
+  plausible application profile.
 * Treat missing or thin credit history as uncertainty, not bad behaviour.
 * Include the applicant's actual values in every exported recommendation.
-* Keep cluster-based TARGET analysis as a train-only, out-of-fold backtest.
 """
 
 from __future__ import annotations
@@ -21,46 +20,47 @@ from typing import Iterable
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import (
-    average_precision_score,
-    brier_score_loss,
-    confusion_matrix,
-    f1_score,
-    precision_recall_curve,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import StratifiedKFold
 
 
 METHOD_COLUMNS = {
     "is_iqr_outlier": "Adjusted IQR",
     "is_zscore_outlier": "Calibrated Z-score",
-    "is_mahalanobis_outlier": "Robust Mahalanobis",
+    "is_mahalanobis_outlier": "Shrinkage Mahalanobis",
     "is_isolation_outlier": "Isolation Forest",
     "is_lof_outlier": "Local Outlier Factor",
-    "IS_OUTLIER": "DBSCAN noise",
 }
+
+SAMPLED_DENSITY_STATES = (
+    "Not assessed",
+    "Assessed (not isolated)",
+    "Assessed (isolated)",
+)
 
 EVIDENCE_FEATURE_LABELS = {
     "AMT_INCOME_TOTAL": "reported income",
-    "AMT_CREDIT": "requested credit",
+    "AMT_CREDIT": "current-loan credit amount",
     "AMT_ANNUITY": "annuity amount",
     "CREDIT_TO_INCOME": "credit-to-income ratio",
     "ANNUITY_TO_INCOME": "annuity-to-income ratio",
-    "CREDIT_TERM_MONTHS": "estimated credit term",
+    "CREDIT_TO_ANNUITY": "credit-to-annuity payment-size proxy",
     "BUREAU_COUNT": "bureau record count",
     "BUREAU_DEBT_TO_CREDIT_RATIO": "bureau debt-to-credit ratio",
+    "BUREAU_BB_DPD_RATIO_MEAN": "average late-payment share in bureau monthly history",
+    "BUREAU_BB_SEVERE_DPD_MEAN": "average severe-late share in bureau monthly history",
     "PREV_COUNT": "previous application count",
+    "PREV_REFUSED_COUNT": "previous refusal count",
+    "INST_DPD_MEAN": "average instalment delay",
     "INST_DPD_MAX": "longest instalment delay",
     "INST_LATE_RATIO": "late-instalment share",
+    "INST_SEVERE_LATE_RATIO": "severely late instalment share",
     "INST_PAYMENT_RATIO_MEAN": "average payment-to-due ratio",
     "INST_COUNT": "instalment record count",
-    "CC_UTILIZATION_MEAN": "average card utilisation",
-    "CC_UTILIZATION_MAX": "maximum card utilisation",
-    "CC_AMT_BALANCE_MEAN": "average card balance",
+    "POS_SK_DPD_MEAN": "average previous-account POS or cash-loan delay",
+    "POS_MONTHS_COUNT": "previous-account POS or cash-loan monthly record count",
+    "CC_UTILIZATION_MEAN": "average previous-account card utilisation",
+    "CC_UTILIZATION_MAX": "maximum previous-account card utilisation",
+    "CC_SK_DPD_MEAN": "average previous-account card delay",
+    "CC_AMT_BALANCE_MEAN": "average previous-account card balance",
 }
 
 
@@ -106,6 +106,45 @@ def _num(value: float, digits: int = 2) -> str:
     return "missing" if not _present(value) else f"{value:,.{digits}f}"
 
 
+def _feature_value_text(column: str, value: float) -> str:
+    """Format an unscaled feature value without inventing a currency or unit."""
+    if not _present(value):
+        return "missing in the business-value file"
+    if column in {
+        "ANNUITY_TO_INCOME", "BUREAU_BB_DPD_RATIO_MEAN",
+        "BUREAU_BB_SEVERE_DPD_MEAN", "INST_LATE_RATIO",
+        "INST_SEVERE_LATE_RATIO", "CC_UTILIZATION_MEAN",
+        "CC_UTILIZATION_MAX",
+    }:
+        return _pct(value, 2)
+    if column in {"CREDIT_TO_INCOME", "BUREAU_DEBT_TO_CREDIT_RATIO", "INST_PAYMENT_RATIO_MEAN"}:
+        return f"{value:,.2f}x"
+    if "DPD" in column:
+        return f"{value:,.2f} days"
+    if column.endswith("COUNT"):
+        return f"{value:,.0f}"
+    return _num(value)
+
+
+def _extreme_axis_evidence(row: pd.Series) -> Evidence | None:
+    feature = str(row.get("_EXTREME_FEATURE", "")).strip()
+    standardized_value = _number(row, "_EXTREME_STANDARDIZED_VALUE")
+    if not feature or not _present(standardized_value) or abs(standardized_value) < 10:
+        return None
+    label = EVIDENCE_FEATURE_LABELS.get(feature, feature.replace("_", " ").lower())
+    business_value = _source_number(row, feature)
+    return Evidence(
+        f"Extreme {label}",
+        3,
+        f"{label} is {_feature_value_text(feature, business_value)}; its prepared detection value is "
+        f"{standardized_value:+.1f} standard deviations from the portfolio mean, so this is the exact field "
+        "that needs the single-axis source check",
+        f"reconcile {label} and its contributing source fields for sign, units, joins, and aggregation. "
+        "If confirmed, keep the value as verified evidence and continue the appropriate affordability or repayment review",
+        "Data Operations / Credit Review",
+    )
+
+
 def _as_sentence(value: str) -> str:
     text = str(value).strip()
     if not text:
@@ -134,6 +173,75 @@ def _methods_fired(row: pd.Series) -> list[str]:
         if pd.notna(value) and int(value) == 1:
             fired.append(label)
     return fired
+
+
+def _nullable_boolean(value: object, field: str) -> bool | None:
+    """Read a CSV-safe nullable Boolean without treating missing as false."""
+    if pd.isna(value):
+        return None
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (int, np.integer)) and int(value) in {0, 1}:
+        return bool(value)
+    if isinstance(value, (float, np.floating)) and float(value) in {0.0, 1.0}:
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1"}:
+            return True
+        if normalized in {"false", "0"}:
+            return False
+    raise ValueError(f"{field} contains an invalid Boolean value: {value!r}")
+
+
+def _sampled_density_state(row: pd.Series) -> str:
+    """Describe DBSCAN sample coverage separately from its isolation result."""
+    covered = _nullable_boolean(
+        row.get("dbscan_sample_covered", pd.NA), "dbscan_sample_covered"
+    )
+    noise = _nullable_boolean(
+        row.get("dbscan_sample_noise", pd.NA), "dbscan_sample_noise"
+    )
+    if covered is not True:
+        if noise is not None:
+            raise ValueError(
+                "dbscan_sample_noise must be missing when dbscan_sample_covered is false."
+            )
+        return "Not assessed"
+    if noise is None:
+        raise ValueError(
+            "dbscan_sample_noise must be present when dbscan_sample_covered is true."
+        )
+    return "Assessed (isolated)" if noise else "Assessed (not isolated)"
+
+
+OUTLIER_TYPES = (
+    "Point (globally extreme single value)",
+    "Collective (sampled sparse-density group)",
+    "Contextual (unusual multivariate combination)",
+)
+
+
+def _outlier_type(row: pd.Series) -> str:
+    """Classify the record in the point / contextual / collective typology.
+
+    Precedence: a value >=10 SD on one prepared axis is anomalous with no
+    context at all, so it outranks the sampled density view; DBSCAN noise
+    corroboration marks records isolated together in the sampled embedding;
+    everything else entered on multivariate detector agreement alone, i.e.
+    each individual value is plausible and only the combination is unusual.
+    """
+    extreme = _nullable_boolean(
+        row.get("extreme_single_axis", pd.NA), "extreme_single_axis"
+    )
+    if extreme is True:
+        return OUTLIER_TYPES[0]
+    noise = _nullable_boolean(
+        row.get("dbscan_sample_noise", pd.NA), "dbscan_sample_noise"
+    )
+    if noise is True:
+        return OUTLIER_TYPES[1]
+    return OUTLIER_TYPES[2]
 
 
 def _segment_reference(
@@ -169,7 +277,6 @@ def _logical_data_checks(row: pd.Series) -> list[Evidence]:
     annuity = _source_number(row, "AMT_ANNUITY")
     age = _number(row, "YEARS_BIRTH")
     employed = _number(row, "YEARS_EMPLOYED")
-    term = credit / annuity if _present(credit) and _present(annuity) and annuity > 0 else np.nan
     payment_ratio = _number(row, "INST_PAYMENT_RATIO_MEAN")
 
     for label, value in [
@@ -185,7 +292,7 @@ def _logical_data_checks(row: pd.Series) -> list[Evidence]:
 
     if _present(age) and not 18 <= age <= 100:
         issues.append(Evidence(
-            "Implausible age", 3, f"recorded age is {_num(age, 1)} years",
+            "Age outside the review range", 3, f"recorded age is {_num(age, 1)} years",
             "check the birth date in the original application and confirm that the age was calculated correctly",
             "Data Operations",
         ))
@@ -194,13 +301,6 @@ def _logical_data_checks(row: pd.Series) -> list[Evidence]:
             "Employment history exceeds feasible working life", 3,
             f"employment tenure is {_num(employed, 1)} years for age {_num(age, 1)}",
             "check the employment start date and any placeholder value against the source record",
-            "Data Operations",
-        ))
-    if _present(term) and (term <= 0 or term > 600):
-        issues.append(Evidence(
-            "Implausible implied term", 3,
-            f"credit divided by annuity implies {_num(term, 1)} payment periods",
-            "check the credit and annuity units against the contracted repayment schedule",
             "Data Operations",
         ))
     if _present(payment_ratio) and (payment_ratio < 0 or payment_ratio > 3):
@@ -264,7 +364,7 @@ def _repayment_risk_evidence(row: pd.Series) -> list[Evidence]:
         severity = 3 if cti >= 8 else 2
         signals.append(Evidence(
             "High credit compared with income", severity,
-            f"requested credit equals {_num(cti, 1)} times reported income",
+            f"current-loan credit amount equals {_num(cti, 1)} times reported income",
             "confirm all current obligations and check whether the applicant could still pay if income falls",
             "Senior Underwriter",
         ))
@@ -294,24 +394,24 @@ def _repayment_risk_evidence(row: pd.Series) -> list[Evidence]:
         signals.append(Evidence(
             "Repeated underpayment", 2,
             f"the average payment is {_pct(pay_ratio)} of the amount due",
-            "check partial payments and unresolved balances before increasing exposure",
+            "check the previous-loan payment timeline for partial payments, reversals, and cure, then verify whether any related obligation is still open",
             "Credit Review",
         ))
     if (_present(util_mean) and util_mean >= 0.80) or (_present(util_max) and util_max >= 1.0):
         evidence = (
-            f"average card utilisation is {_pct(util_mean)} and the maximum is {_pct(util_max)}"
+            f"average utilisation in previous Home Credit card accounts is {_pct(util_mean)} and the historical maximum is {_pct(util_max)}"
         )
         signals.append(Evidence(
             "High card utilisation", 2, evidence,
-            "check card balances, payment capacity, and whether the limit still fits. High utilisation alone does not prove financial distress",
+            "verify whether a revolving facility is still open. Only then obtain its current balance and payment status, assess capacity, and consider limit suitability. Historical utilisation alone does not prove financial distress",
             "Revolving Credit Review",
         ))
     max_dpd = np.nanmax([cc_dpd, pos_dpd]) if any(_present(v) for v in [cc_dpd, pos_dpd]) else np.nan
     if _present(max_dpd) and max_dpd > 0:
         signals.append(Evidence(
             "Card or POS arrears", 2,
-            f"average days past due reaches {_num(max_dpd, 1)} days across card or POS history",
-            "check how recent the card or POS arrears are before changing exposure",
+            f"average days past due reaches {_num(max_dpd, 1)} days in previous Home Credit card or POS history",
+            "check the source timeline, recency, severity, and cure status, then verify whether any related facility or obligation remains open",
             "Credit Review",
         ))
     if _present(bureau_debt) and bureau_debt >= 0.80:
@@ -341,7 +441,7 @@ def _repayment_risk_evidence(row: pd.Series) -> list[Evidence]:
         signals.append(Evidence(
             "Low combined external score", 2,
             f"the average available external score is {_num(float(np.mean(ext_values)), 3)}",
-            "check the underlying bureau information. Do not rely on the combined score by itself",
+            "verify which external scores were observed and their source validity, then reconcile them with directly observed bureau, income, and repayment evidence. Do not use the combined mean as a reason code",
             "Senior Underwriter",
         ))
     if _present(prev_refused) and prev_refused >= 3 and _present(approval) and approval < 0.50:
@@ -390,13 +490,22 @@ def build_anomaly_investigation(
     combined: pd.DataFrame,
     labels: pd.DataFrame,
     cluster_names: pd.DataFrame,
+    anomaly_features: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Build one evidence-backed review recommendation per high-confidence row."""
+    """Build one evidence-backed recommendation per targeted-review record."""
     names = dict(zip(cluster_names["cluster_id"].astype(int), cluster_names["nama"]))
-    label_cols = ["ROW_ID", "CLUSTER_KMEANS", "IS_OUTLIER"]
+    required_density_fields = {"dbscan_sample_covered", "dbscan_sample_noise"}
+    missing_density_fields = required_density_fields.difference(combined.columns)
+    if missing_density_fields:
+        raise ValueError(
+            "anomaly_combined is missing sampled-density context fields: "
+            f"{sorted(missing_density_fields)}"
+        )
+    label_cols = ["ROW_ID", "CLUSTER_KMEANS"]
     label_view = labels[label_cols].drop_duplicates("ROW_ID")
+    targeted_labels = {"TARGETED_REVIEW", "HIGH_CONFIDENCE_ANOMALY"}
     focus_ids = combined.loc[
-        combined["anomaly_category"].eq("HIGH_CONFIDENCE_ANOMALY"), "ROW_ID"
+        combined["anomaly_category"].isin(targeted_labels), "ROW_ID"
     ]
 
     merged = business[business["ROW_ID"].isin(focus_ids)].merge(
@@ -404,12 +513,43 @@ def build_anomaly_investigation(
     )
     if "CLUSTER_KMEANS" not in merged.columns:
         merged = merged.merge(label_view, on="ROW_ID", how="left")
-    if "IS_OUTLIER" not in merged.columns:
-        merged = merged.merge(label_view[["ROW_ID", "IS_OUTLIER"]], on="ROW_ID", how="left")
+    if anomaly_features is not None:
+        if "SK_ID_CURR" not in anomaly_features:
+            raise ValueError("anomaly_features must contain SK_ID_CURR")
+        feature_view = anomaly_features.loc[
+            anomaly_features["SK_ID_CURR"].isin(merged["SK_ID_CURR"])
+        ].drop_duplicates("SK_ID_CURR")
+        feature_columns = [
+            column for column in feature_view.columns
+            if column not in {"ROW_ID", "SK_ID_CURR"}
+            and pd.api.types.is_numeric_dtype(feature_view[column])
+        ]
+        if not feature_columns:
+            raise ValueError("anomaly_features has no numeric detection columns")
+        prepared = feature_view[feature_columns].apply(pd.to_numeric, errors="coerce")
+        prepared_abs = prepared.abs().fillna(-np.inf).to_numpy()
+        peak_positions = prepared_abs.argmax(axis=1)
+        prepared_values = prepared.to_numpy()
+        extreme_lookup = pd.DataFrame({
+            "SK_ID_CURR": feature_view["SK_ID_CURR"].astype(int).to_numpy(),
+            "_EXTREME_FEATURE": np.asarray(feature_columns, dtype=object)[peak_positions],
+            "_EXTREME_STANDARDIZED_VALUE": prepared_values[
+                np.arange(len(feature_view)), peak_positions
+            ],
+        })
+        merged = merged.merge(
+            extreme_lookup,
+            on="SK_ID_CURR",
+            how="left",
+            validate="one_to_one",
+        )
+    else:
+        merged["_EXTREME_FEATURE"] = ""
+        merged["_EXTREME_STANDARDIZED_VALUE"] = np.nan
 
     reference_cols = [
         "AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY",
-        "CREDIT_TO_INCOME", "ANNUITY_TO_INCOME", "CREDIT_TERM_MONTHS",
+        "CREDIT_TO_INCOME", "ANNUITY_TO_INCOME", "CREDIT_TO_ANNUITY",
         "BUREAU_COUNT", "BUREAU_DEBT_TO_CREDIT_RATIO", "PREV_COUNT",
         "INST_DPD_MAX", "INST_LATE_RATIO", "INST_PAYMENT_RATIO_MEAN",
         "INST_COUNT",
@@ -422,16 +562,20 @@ def build_anomaly_investigation(
     for _, row in merged.iterrows():
         cid = int(row["CLUSTER_KMEANS"])
         segment = names.get(cid, f"Cluster {cid}")
+        queue_route = str(row.get("queue_route", "Detector consensus")).replace(
+            "Implausible single value", "Extreme single-axis value"
+        )
         data_issues = _logical_data_checks(row)
         risk_signals = _repayment_risk_evidence(row)
         rare_signals = _rare_profile_evidence(row, medians, scales)
+        extreme_signal = _extreme_axis_evidence(row)
 
         if data_issues:
             review_type = "Data consistency check"
             evidence = sorted(data_issues, key=lambda x: x.severity, reverse=True)
             interpretation = (
                 "One or more values conflict with their expected range or units. Confirm the source data before using this record. "
-                "The anomaly is a data-quality issue, not evidence of default."
+                "The anomaly is a data-quality issue, not evidence of payment difficulty."
             )
         elif risk_signals:
             review_type = "Affordability / repayment review"
@@ -453,21 +597,46 @@ def build_anomaly_investigation(
                 "Check the unusual values, then continue with standard review if they are correct."
             )
 
+        if extreme_signal is not None:
+            evidence = [extreme_signal, *[item for item in evidence if item.driver != extreme_signal.driver]]
+
         top = evidence[:3]
         primary = top[0]
-        methods = _methods_fired(row)
-        robust_peak = 0.0
-        for item in rare_signals:
-            try:
-                robust_peak = max(robust_peak, float(item.evidence.split("(")[-1].split()[0]))
-            except (ValueError, IndexError):
-                pass
-        if int(row.get("IS_OUTLIER", 0) or 0) == 1:
-            scope = "Collective / density"
-        elif robust_peak >= 8:
-            scope = "Global / extreme value"
+        primary_fact = _as_sentence(primary.evidence)
+        if review_type == "Data consistency check":
+            interpretation = (
+                f"Start with {primary.driver.lower()}: {primary_fact} Until the source is reconciled, this value "
+                "could distort the application assessment. The check does not establish payment difficulty."
+            )
+        elif review_type == "Affordability / repayment review":
+            interpretation = (
+                f"The first review point is {primary.driver.lower()}: {primary_fact} This can affect the view of "
+                "affordability or repayment history, but recency, cure status, and the applicant's current position "
+                "still need to be verified."
+            )
         else:
-            scope = "Contextual / unusual combination"
+            interpretation = (
+                f"The main unusual point is {primary.driver.lower()}: {primary_fact} Rarity is a prompt to verify "
+                "the source, not evidence for an adverse credit conclusion."
+            )
+        if extreme_signal is not None and queue_route == "Extreme single-axis value":
+            interpretation += (
+                " This is the exact field behind the single-axis queue entry; its standardized distance does not "
+                "prove an error or payment difficulty."
+            )
+        elif extreme_signal is not None:
+            interpretation += (
+                " The record also contains a field at least 10 standard deviations from the portfolio mean, "
+                "although agreement among portfolio-wide detectors remains its queue-entry route."
+            )
+        methods = _methods_fired(row)
+        scope = (
+            "Portfolio single-axis extreme"
+            if queue_route == "Extreme single-axis value"
+            else "Detector-consensus pattern"
+        )
+        sampled_density_corroboration = _sampled_density_state(row)
+        outlier_type = _outlier_type(row)
 
         max_severity = max(e.severity for e in evidence)
         priority = (
@@ -482,7 +651,8 @@ def build_anomaly_investigation(
             if e.action not in actions:
                 actions.append(e.action)
         recommendation = (
-            f"Applicant {int(row['SK_ID_CURR'])}: {_join_sentences(actions)} "
+            f"Applicant {int(row['SK_ID_CURR'])}: start with {primary.driver.lower()}: {primary.evidence}. "
+            f"{_join_sentences(actions)} "
             "Document the facts confirmed during review. Base any credit action on those facts, "
             "not the anomaly or cluster label."
         )
@@ -501,7 +671,10 @@ def build_anomaly_investigation(
             "Segment": segment,
             "Detected By": ", ".join(methods),
             "Detector Count": len(methods),
+            "Queue Route": queue_route,
             "Anomaly Scope": scope,
+            "Outlier Type": outlier_type,
+            "Sampled Density Corroboration": sampled_density_corroboration,
             "Review Type": review_type,
             "Priority": priority,
             "Primary Driver": primary.driver,
@@ -510,6 +683,12 @@ def build_anomaly_investigation(
             "Recommended Action": recommendation,
             "Review Owner": owners,
             "Automatic Decision Allowed": "No",
+            "Extreme Trigger Field": str(row.get("_EXTREME_FEATURE", "")),
+            "Extreme Trigger Standardized Value": _number(row, "_EXTREME_STANDARDIZED_VALUE"),
+            "Extreme Trigger Business Value": _feature_value_text(
+                str(row.get("_EXTREME_FEATURE", "")),
+                _source_number(row, str(row.get("_EXTREME_FEATURE", ""))),
+            ) if extreme_signal is not None else "",
             "Evidence Value Basis": "Uses original source values where available and observed history summaries otherwise",
         }
         rows.append(output)
@@ -540,229 +719,3 @@ def build_anomaly_investigation(
         .sort_values(["records", "mean_severity"], ascending=False)
     )
     return investigation, driver_summary
-
-
-def cluster_risk_backtest(
-    labels: pd.DataFrame,
-    cluster_names: pd.DataFrame,
-    target: pd.DataFrame,
-    n_splits: int = 5,
-    threshold_uplift: float = 1.10,
-    smoothing: float = 200.0,
-) -> dict[str, pd.DataFrame]:
-    """Train-only out-of-fold backtest of a cluster-level risk flag.
-
-    Each validation row receives a smoothed default rate estimated only from
-    the other folds. Test applications never enter the metric denominator.
-    """
-    data = target[["SK_ID_CURR", "TARGET"]].merge(
-        labels[["SK_ID_CURR", "CLUSTER_KMEANS"]], on="SK_ID_CURR", how="inner",
-        validate="one_to_one",
-    )
-    if len(data) != len(target):
-        raise ValueError(
-            f"Train ID alignment failed: expected {len(target):,}, matched {len(data):,}."
-        )
-    data = data.reset_index(drop=True)
-    data["OOF_CLUSTER_DEFAULT_RATE"] = np.nan
-    data["FOLD_BASELINE"] = np.nan
-    data["FOLD_THRESHOLD"] = np.nan
-    data["FOLD"] = -1
-
-    splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
-    for fold, (fit_idx, valid_idx) in enumerate(splitter.split(data, data["TARGET"])):
-        fit = data.iloc[fit_idx]
-        baseline = float(fit["TARGET"].mean())
-        grouped = fit.groupby("CLUSTER_KMEANS")["TARGET"].agg(["sum", "count"])
-        rates = (grouped["sum"] + smoothing * baseline) / (grouped["count"] + smoothing)
-        data.loc[valid_idx, "OOF_CLUSTER_DEFAULT_RATE"] = data.loc[
-            valid_idx, "CLUSTER_KMEANS"
-        ].map(rates)
-        data.loc[valid_idx, "FOLD_THRESHOLD"] = baseline * threshold_uplift
-        data.loc[valid_idx, "FOLD_BASELINE"] = baseline
-        data.loc[valid_idx, "FOLD"] = fold
-
-    if data["OOF_CLUSTER_DEFAULT_RATE"].isna().any():
-        raise ValueError("At least one out-of-fold cluster score is missing.")
-
-    data["CLUSTER_RISK_FLAG"] = (
-        data["OOF_CLUSTER_DEFAULT_RATE"] >= data["FOLD_THRESHOLD"]
-    ).astype(int)
-    y = data["TARGET"].astype(int).to_numpy()
-    pred = data["CLUSTER_RISK_FLAG"].to_numpy()
-    score = data["OOF_CLUSTER_DEFAULT_RATE"].to_numpy()
-    tn, fp, fn, tp = confusion_matrix(y, pred, labels=[0, 1]).ravel()
-    baseline = float(np.mean(y))
-    precision = float(precision_score(y, pred, zero_division=0))
-    recall = float(recall_score(y, pred, zero_division=0))
-    specificity = float(tn / (tn + fp)) if tn + fp else 0.0
-    metrics = pd.DataFrame([
-        ("evaluation_rows", len(data), "Train IDs only; test rows excluded"),
-        ("test_rows_scored", 0, "No unlabeled test row enters scoring"),
-        ("observed_default_rate", baseline, "TARGET=1 share in matched train rows"),
-        ("flagged_share", float(np.mean(pred)), "Share receiving the cluster risk flag"),
-        ("precision", precision, "Default share among cluster-risk flags"),
-        ("recall", recall, "Share of observed defaults captured by the flag"),
-        ("specificity", specificity, "Share of observed non-defaults not flagged"),
-        ("f1", float(f1_score(y, pred, zero_division=0)), "Harmonic mean of precision and recall"),
-        ("lift_vs_baseline", precision / baseline if baseline else np.nan, "Precision divided by portfolio default rate"),
-        ("average_precision", float(average_precision_score(y, score)), "PR-area summary for the five-level cluster score"),
-        ("roc_auc", float(roc_auc_score(y, score)), "Ranking metric; secondary under class imbalance"),
-        ("score_levels", int(pd.Series(score).nunique()), "Distinct cluster-rate scores available"),
-        ("true_negative", tn, "Confusion-matrix count"),
-        ("false_positive", fp, "Confusion-matrix count"),
-        ("false_negative", fn, "Confusion-matrix count"),
-        ("true_positive", tp, "Confusion-matrix count"),
-        ("threshold_uplift", threshold_uplift, "Flag if fold-trained cluster rate is at least this multiple of fold baseline"),
-    ], columns=["metric", "value", "business_definition"])
-
-    name_map = dict(zip(cluster_names["cluster_id"].astype(int), cluster_names["nama"]))
-    rates = data.groupby("CLUSTER_KMEANS")["TARGET"].agg(
-        train_applicants="size", defaults="sum", default_rate="mean"
-    ).reset_index()
-    rates["Segment"] = rates["CLUSTER_KMEANS"].map(name_map)
-    rates["portfolio_default_rate"] = baseline
-    rates["lift_vs_portfolio"] = rates["default_rate"] / baseline
-    rates["descriptive_risk_flag"] = rates["default_rate"] >= baseline * threshold_uplift
-
-    # This is the empirical precision ceiling of any rule that can only choose
-    # whole clusters.  It makes the coarse-granularity limitation explicit.
-    metrics = pd.concat([metrics, pd.DataFrame([{
-        "metric": "cluster_precision_ceiling",
-        "value": float(rates["default_rate"].max()),
-        "business_definition": "Highest observed default share in any complete segment",
-    }])], ignore_index=True)
-
-    cm = pd.DataFrame(
-        [[tn, fp], [fn, tp]],
-        index=["Actual non-default", "Actual default"],
-        columns=["Flag non-default", "Flag default"],
-    ).rename_axis("actual").reset_index()
-
-    p, r, thresholds = precision_recall_curve(y, score)
-    pr = pd.DataFrame({"precision": p, "recall": r})
-    pr["threshold"] = np.r_[thresholds, np.nan]
-
-    sweep_rows = []
-    for uplift in np.arange(1.00, 1.51, 0.05):
-        sweep_pred = score >= data["FOLD_BASELINE"].to_numpy() * uplift
-        sweep_precision = precision_score(y, sweep_pred, zero_division=0)
-        sweep_rows.append({
-            "threshold_uplift": round(float(uplift), 2),
-            "flagged_share": float(np.mean(sweep_pred)),
-            "precision": float(sweep_precision),
-            "recall": float(recall_score(y, sweep_pred, zero_division=0)),
-            "lift_vs_baseline": float(sweep_precision / baseline) if baseline else np.nan,
-        })
-    sweep = pd.DataFrame(sweep_rows)
-
-    data["Segment"] = data["CLUSTER_KMEANS"].map(name_map)
-    data["EVALUATION_SCOPE"] = "TRAIN_ONLY_CROSSFIT_OUTCOME_ALIGNMENT"
-    return {
-        "predictions": data,
-        "metrics": metrics,
-        "cluster_rates": rates,
-        "confusion_matrix": cm,
-        "pr_curve": pr,
-        "policy_sweep": sweep,
-    }
-
-
-def supervised_reference_benchmark(
-    features: pd.DataFrame,
-    target: pd.DataFrame,
-    flagged_share: float,
-    n_splits: int = 5,
-) -> dict[str, pd.DataFrame]:
-    """Interpretable train-only supervised reference for objective diagnosis.
-
-    This is intentionally separate from the five KDD phases.  It answers
-    whether applicant-level TARGET signal exists when a method is actually
-    optimized for TARGET.  It is not a deployment model: preprocessing remains
-    the project's transductive discovery preprocessing and there is no temporal
-    or market holdout, calibration approval, fairness validation, or policy
-    threshold.
-    """
-    data = target[["SK_ID_CURR", "TARGET"]].merge(
-        features, on="SK_ID_CURR", how="inner", validate="one_to_one"
-    )
-    if len(data) != len(target):
-        raise ValueError(
-            f"Supervised reference ID alignment failed: expected {len(target):,}, matched {len(data):,}."
-        )
-
-    # Remove life-stage and socioeconomic proxy axes from this diagnostic.  The
-    # resulting benchmark is still not fairness-cleared, but avoids presenting
-    # those fields as a route to higher model performance.
-    excluded = {
-        "YEARS_BIRTH", "NAME_EDUCATION_TYPE", "NAME_INCOME_TYPE_FREQ",
-        "ORGANIZATION_TYPE_FREQ", "REGION_RATING_CLIENT_W_CITY",
-    }
-    feature_cols = [
-        c for c in features.columns
-        if c != "SK_ID_CURR" and c not in excluded
-    ]
-    X = data[feature_cols].to_numpy(dtype=np.float64)
-    y = data["TARGET"].astype(int).to_numpy()
-    oof = np.full(len(data), np.nan, dtype=float)
-    coef_rows = []
-
-    splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
-    for fold, (fit_idx, valid_idx) in enumerate(splitter.split(X, y)):
-        model = LogisticRegression(
-            solver="lbfgs", max_iter=500, C=1.0, class_weight=None,
-            random_state=42,
-        )
-        model.fit(X[fit_idx], y[fit_idx])
-        oof[valid_idx] = model.predict_proba(X[valid_idx])[:, 1]
-        coef_rows.extend({
-            "fold": fold, "feature": col, "coefficient": float(value)
-        } for col, value in zip(feature_cols, model.coef_[0]))
-
-    if np.isnan(oof).any():
-        raise ValueError("At least one supervised out-of-fold score is missing.")
-    flagged_share = float(np.clip(flagged_share, 1 / len(oof), 1.0))
-    threshold = float(np.quantile(oof, 1 - flagged_share))
-    pred = (oof >= threshold).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y, pred, labels=[0, 1]).ravel()
-    baseline = float(y.mean())
-    precision = float(precision_score(y, pred, zero_division=0))
-    recall = float(recall_score(y, pred, zero_division=0))
-
-    metrics = pd.DataFrame([
-        ("evaluation_rows", len(data), "Train IDs only; test rows excluded"),
-        ("test_rows_scored", 0, "No unlabeled test row enters scoring"),
-        ("observed_default_rate", baseline, "TARGET=1 share"),
-        ("flagged_share", float(pred.mean()), "Matched to the cluster review capacity"),
-        ("precision", precision, "Default share among reference-model flags"),
-        ("recall", recall, "Observed defaults captured at matched capacity"),
-        ("specificity", float(tn / (tn + fp)), "Observed non-defaults not flagged"),
-        ("f1", float(f1_score(y, pred, zero_division=0)), "Precision/recall harmonic mean"),
-        ("lift_vs_baseline", precision / baseline, "Precision divided by base rate"),
-        ("average_precision", float(average_precision_score(y, oof)), "Area under precision-recall curve"),
-        ("roc_auc", float(roc_auc_score(y, oof)), "Out-of-fold ranking discrimination"),
-        ("brier_score", float(brier_score_loss(y, oof)), "Mean squared probability error; lower is better"),
-        ("score_threshold", threshold, "OOF score cut at matched review capacity"),
-        ("true_negative", tn, "Confusion-matrix count"),
-        ("false_positive", fp, "Confusion-matrix count"),
-        ("false_negative", fn, "Confusion-matrix count"),
-        ("true_positive", tp, "Confusion-matrix count"),
-    ], columns=["metric", "value", "business_definition"])
-
-    predictions = data[["SK_ID_CURR", "TARGET"]].copy()
-    predictions["OOF_PD_REFERENCE_SCORE"] = oof
-    predictions["REFERENCE_FLAG"] = pred
-    predictions["EVALUATION_SCOPE"] = "TRAIN_ONLY_OOF_DIAGNOSTIC_REFERENCE"
-
-    coefficients = pd.DataFrame(coef_rows)
-    coefficient_summary = coefficients.groupby("feature", as_index=False).agg(
-        mean_coefficient=("coefficient", "mean"),
-        coefficient_sd=("coefficient", "std"),
-    )
-    coefficient_summary["abs_mean_coefficient"] = coefficient_summary["mean_coefficient"].abs()
-    coefficient_summary = coefficient_summary.sort_values("abs_mean_coefficient", ascending=False)
-    return {
-        "metrics": metrics,
-        "predictions": predictions,
-        "coefficients": coefficient_summary,
-    }

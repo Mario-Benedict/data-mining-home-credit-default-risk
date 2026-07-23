@@ -1,0 +1,2 @@
+business_signal_candidates,unique_business_patterns,selected_unique_patterns,assignment_minimum,meets_assignment_minimum,selection_note
+151,80,12,10,True,"Minimum met without schema, arithmetic, count-definition, or decorative rules"

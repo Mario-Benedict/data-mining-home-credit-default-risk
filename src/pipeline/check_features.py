@@ -1,75 +1,46 @@
 """
-Check the finished feature set. This step selects nothing.
+Audit the finished feature set and publish every keep/drop decision.
 
 The name matters, because an earlier one (step10_feature_selection) implied this
-module chooses features. It does not. Nothing here rewrites
-features_clustering.csv; it only reports on what steps 1 to 9 already built.
+module chooses features at the end. It does not rewrite
+features_clustering.csv. It records the correlation- and entropy-led decisions
+already applied in steps 1 to 9, then checks the retained matrix.
 
-Two measures, with deliberately unequal authority:
+Two checks, both fully unsupervised:
 
     1. Pearson correlation between features, to catch leftover multicollinearity.
-       Correlation is computed feature-to-feature and never involves the label,
-       so acting on it is safe. This is what actually drove column removals,
-       back in steps 4 and 7.
+       Correlation is computed feature-to-feature only. This is what actually
+       drove column removals, back in steps 4 and 7.
 
-    2. Mutual information against TARGET, to show the feature set is not inert.
-       This is REPORTED ONLY and must never drive a drop. Selecting features by
-       their association with TARGET would make an unsupervised segmentation
-       covertly supervised, and it would make the Phase 4 backtest circular:
-       Section 8 tests the clusters against TARGET, which is only meaningful
-       because TARGET never touched the clustering.
+    2. Unsupervised entropy, to document whether a field varies enough to form
+       a useful segment axis.
 
-The reasoning is written out in REPORT.md Section 11b.1.
+The portfolio is analyzed as one unlabeled population: the out-of-scope
+outcome column is dropped at ingestion, so no audit here reads it either.
+
+The reasoning is documented in REPORT.md.
 
 Output:
-  results/phase1_preprocessing/feature_importance.csv
   results/phase1_preprocessing/high_corr_pairs.csv
+  results/phase1_preprocessing/feature_selection_decisions.csv
 """
 import os
 import numpy as np
 import pandas as pd
-from sklearn.feature_selection import mutual_info_classif
 
-from .config import BASE_DIR, OUTPUT_DIR, PATHS
+from .config import (
+    BASE_DIR,
+    OUTPUT_DIR,
+    PATHS,
+    COLS_DROP_AVG,
+    COLS_DROP_MEDI,
+    COLS_DROP_REDUNDANT,
+)
 from .utils import log
 
 
 REPORT_DIR = os.path.join(BASE_DIR, "results", "phase1_preprocessing")
 FEATURES_PATH = os.path.join(OUTPUT_DIR, "features_clustering.csv")
-
-
-def compute_mutual_info(features: pd.DataFrame, target: pd.Series) -> pd.DataFrame:
-    """
-    Mutual information of each feature against TARGET.
-    MI = 0 means the feature carries no information about default vs non-default.
-    MI > 0 means there is a detectable relationship, including non-linear ones.
-    A fixed random_state keeps the result reproducible.
-    """
-    log(f"  Computing mutual_info_classif on {features.shape[1]} features ...")
-    # Low-cardinality flags/ordinals are discrete variables.  Treating them as
-    # continuous would use the wrong k-nearest-neighbour entropy estimator.
-    discrete_mask = np.array([features[c].nunique(dropna=False) <= 10 for c in features.columns])
-    # Some ordinal variables are standardized in the mining matrix, so their
-    # category levels are represented by non-integer floats.  Factorize a copy
-    # before the discrete MI estimator; otherwise scikit-learn correctly warns
-    # that a continuous-looking vector is being used as a class label.
-    mi_features = features.copy()
-    for column in mi_features.columns[discrete_mask]:
-        mi_features[column] = pd.factorize(mi_features[column], sort=True)[0]
-    mi_scores = mutual_info_classif(
-        mi_features.values,
-        target.values,
-        discrete_features=discrete_mask,
-        random_state=42,
-        n_neighbors=3,
-    )
-    df = pd.DataFrame({
-        "feature": features.columns,
-        "mutual_info": mi_scores,
-        "is_discrete": discrete_mask,
-    }).sort_values("mutual_info", ascending=False).reset_index(drop=True)
-    df["rank"] = df.index + 1
-    return df
 
 
 def compute_correlation_pairs(features: pd.DataFrame, threshold: float = 0.85) -> pd.DataFrame:
@@ -86,6 +57,159 @@ def compute_correlation_pairs(features: pd.DataFrame, threshold: float = 0.85) -
     return high
 
 
+def normalized_unsupervised_entropy(series: pd.Series, bins: int = 20) -> float:
+    """Entropy on values or quantile bins, scaled to 0-1 and independent of TARGET."""
+    if len(series) == 0:
+        return 0.0
+    non_missing = series.dropna()
+    if non_missing.nunique() <= 1 and not series.isna().any():
+        return 0.0
+
+    if pd.api.types.is_numeric_dtype(non_missing) and non_missing.nunique() > bins:
+        value_counts = non_missing.value_counts()
+        dominant_value = value_counts.index[0]
+        dominant_share = float(value_counts.iloc[0] / len(non_missing))
+        # Quantiles collapse to one bin when almost every value is tied at zero,
+        # even though a meaningful rare tail remains. Preserve that dominant
+        # mass, then bin the remaining values separately.
+        if dominant_share >= 0.50 and len(value_counts) > 1:
+            tail = non_missing[non_missing.ne(dominant_value)]
+            tail_q = min(bins - 1, int(tail.nunique()))
+            tail_bins = pd.qcut(tail, q=tail_q, duplicates="drop")
+            counts = pd.concat([
+                pd.Series({"dominant_value": float(value_counts.iloc[0])}),
+                tail_bins.value_counts(sort=False).astype(float).set_axis(
+                    tail_bins.value_counts(sort=False).index.astype("object")
+                ),
+            ])
+        else:
+            bucketed = pd.qcut(non_missing, q=bins, duplicates="drop")
+            counts = bucketed.value_counts(sort=False).astype(float)
+        if series.isna().any():
+            # A CategoricalIndex cannot accept a new label. Convert it before
+            # adding missingness as its own unsupervised state.
+            counts.index = counts.index.astype("object")
+            counts = pd.concat([
+                counts,
+                pd.Series({"missing": float(series.isna().sum())}),
+            ])
+    else:
+        counts = series.astype("object").where(series.notna(), "__MISSING__").value_counts().astype(float)
+
+    probabilities = (counts / counts.sum()).to_numpy()
+    if len(probabilities) <= 1:
+        return 0.0
+    entropy = float(-(probabilities * np.log(probabilities)).sum())
+    return entropy / float(np.log(len(probabilities)))
+
+
+def feature_selection_decisions(
+    retained: pd.DataFrame,
+    high_corr: pd.DataFrame,
+) -> pd.DataFrame:
+    """Combine upstream removals with an unsupervised audit of retained features."""
+    partner_map: dict[str, tuple[str, float]] = {}
+    for row in high_corr.itertuples(index=False):
+        partner_map[row.feature_1] = (row.feature_2, float(row.abs_corr))
+        partner_map[row.feature_2] = (row.feature_1, float(row.abs_corr))
+
+    rows: list[dict[str, object]] = []
+    for feature in retained.columns:
+        values = retained[feature]
+        entropy = normalized_unsupervised_entropy(values)
+        dominant_share = float(values.value_counts(dropna=False, normalize=True).max())
+        partner, corr = partner_map.get(feature, ("", np.nan))
+        if partner:
+            reason = (
+                f"Retain with {partner}: mean and maximum card-use fields describe sustained and peak "
+                "historical behaviour. Their correlation remains a sensitivity caveat."
+            )
+            basis = "Correlation review plus distinct domain role"
+        else:
+            reason = "Retained in the governed mining matrix; no unresolved redundancy or zero-variance issue."
+            basis = "Correlation and unsupervised entropy audit"
+        rows.append({
+            "feature": feature,
+            "status": "keep",
+            "decision_basis": basis,
+            "normalized_unsupervised_entropy": entropy,
+            "dominant_value_share": dominant_share,
+            "n_unique": int(values.nunique(dropna=False)),
+            "high_corr_partner": partner,
+            "abs_corr": corr,
+            "business_reason": reason,
+            "target_used_for_decision": False,
+        })
+
+    dropped = list(dict.fromkeys(COLS_DROP_AVG + COLS_DROP_MEDI + COLS_DROP_REDUNDANT))
+    available_train = pd.read_csv(PATHS["application_train"], nrows=0).columns
+    correlation_partners = (
+        [feature.replace("_AVG", "_MODE") for feature in COLS_DROP_AVG]
+        + [feature.replace("_MEDI", "_MODE") for feature in COLS_DROP_MEDI]
+        + ["OBS_30_CNT_SOCIAL_CIRCLE", "DAYS_EMPLOYED", "REGION_RATING_CLIENT_W_CITY"]
+    )
+    available = [
+        feature for feature in dict.fromkeys(dropped + correlation_partners)
+        if feature in available_train
+    ]
+    raw = pd.concat([
+        pd.read_csv(PATHS["application_train"], usecols=available),
+        pd.read_csv(PATHS["application_test"], usecols=available),
+    ], ignore_index=True)
+
+    for feature in available:
+        if feature not in dropped:
+            continue
+        values = raw[feature]
+        entropy = normalized_unsupervised_entropy(values)
+        dominant_share = float(values.value_counts(dropna=False, normalize=True).max())
+        corr_value = np.nan
+        if feature in COLS_DROP_AVG:
+            partner = feature.replace("_AVG", "_MODE")
+            basis = "Correlation redundancy"
+            reason = f"Dropped because AVG and MODE exceed the redundancy threshold; retain {partner}."
+            corr_value = abs(float(values.corr(raw[partner])))
+        elif feature in COLS_DROP_MEDI:
+            partner = feature.replace("_MEDI", "_MODE")
+            basis = "Correlation redundancy"
+            reason = f"Dropped because MEDI and MODE exceed the redundancy threshold; retain {partner}."
+            corr_value = abs(float(values.corr(raw[partner])))
+        elif feature == "OBS_60_CNT_SOCIAL_CIRCLE":
+            partner = "OBS_30_CNT_SOCIAL_CIRCLE"
+            basis = "Correlation redundancy"
+            reason = "Dropped because the 60-day and 30-day observation counts are almost identical."
+            corr_value = abs(float(values.corr(raw[partner])))
+        elif feature == "FLAG_EMP_PHONE":
+            partner = "FLAG_SENTINEL_EMPLOYED"
+            basis = "Correlation redundancy"
+            sentinel = raw["DAYS_EMPLOYED"].eq(365243).astype(int)
+            corr_value = abs(float(values.corr(sentinel)))
+            reason = "Dropped because the employment-duration sentinel state already carries the same information."
+        elif feature == "REGION_RATING_CLIENT":
+            partner = "REGION_RATING_CLIENT_W_CITY"
+            basis = "Correlation redundancy"
+            reason = "Dropped because the city-aware rating retains the same information at a more specific level."
+            corr_value = abs(float(values.corr(raw[partner])))
+        else:
+            partner = ""
+            basis = "Near-zero unsupervised entropy"
+            reason = "Dropped because the flag is constant or nearly constant and cannot separate records."
+        rows.append({
+            "feature": feature,
+            "status": "drop",
+            "decision_basis": basis,
+            "normalized_unsupervised_entropy": entropy,
+            "dominant_value_share": dominant_share,
+            "n_unique": int(values.nunique(dropna=False)),
+            "high_corr_partner": partner,
+            "abs_corr": corr_value,
+            "business_reason": reason,
+            "target_used_for_decision": False,
+        })
+
+    return pd.DataFrame(rows).sort_values(["status", "feature"], ascending=[False, True])
+
+
 def run() -> None:
     log("Step 10 - Feature selection check (correlation plus entropy) ...")
 
@@ -95,30 +219,20 @@ def run() -> None:
     features_df = pd.read_csv(FEATURES_PATH)
     log(f"  features_clustering: {features_df.shape[0]:,} x {features_df.shape[1]}")
 
-    log("  Loading TARGET from application_train.csv ...")
-    target_df = pd.read_csv(PATHS["application_train"], usecols=["SK_ID_CURR", "TARGET"])
-    n_train = len(target_df)
-    log(f"  application_train: {n_train:,} rows (TARGET available)")
+    feature_matrix = features_df.drop(columns=["SK_ID_CURR"], errors="ignore")
 
-    if "SK_ID_CURR" in features_df.columns:
-        # Robust ID-based alignment, no reliance on row order.
-        aligned = features_df.merge(target_df, on="SK_ID_CURR", how="inner")
-        train_target = aligned["TARGET"].reset_index(drop=True)
-        train_features = aligned.drop(columns=["SK_ID_CURR", "TARGET"]).reset_index(drop=True)
-    else:
-        # Fallback: positional alignment (train rows are stacked first in join_to_applicant).
-        train_features = features_df.iloc[:n_train].reset_index(drop=True)
-        train_target = target_df["TARGET"].reset_index(drop=True)
-    log(f"  Aligned for MI: {train_features.shape[0]:,} train rows, {train_features.shape[1]} features")
-
-    mi_df = compute_mutual_info(train_features, train_target)
-    mi_path = os.path.join(REPORT_DIR, "feature_importance.csv")
-    mi_df.to_csv(mi_path, index=False)
-    log(f"  Saved {mi_path}")
-
-    high_corr = compute_correlation_pairs(train_features, threshold=0.85)
+    high_corr = compute_correlation_pairs(feature_matrix, threshold=0.85)
     corr_path = os.path.join(REPORT_DIR, "high_corr_pairs.csv")
     high_corr.to_csv(corr_path, index=False)
     log(f"  Saved {corr_path} ({len(high_corr)} pairs with |r| > 0.85)")
+
+    # Publish the complete decision trail. This combines the upstream removals
+    # with an audit of every field retained in the final mining matrix. TARGET
+    # is deliberately absent from the decision basis.
+    retained_full = features_df.drop(columns=["SK_ID_CURR"], errors="ignore")
+    decisions = feature_selection_decisions(retained_full, high_corr)
+    decisions_path = os.path.join(REPORT_DIR, "feature_selection_decisions.csv")
+    decisions.to_csv(decisions_path, index=False)
+    log(f"  Saved {decisions_path} ({len(decisions)} documented decisions)")
 
     log("  Feature selection check complete (correlation plus entropy).")

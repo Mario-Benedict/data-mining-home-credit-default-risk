@@ -1,0 +1,4 @@
+linkage,cophenetic_correlation,sample_size,space,note
+ward,0.4469832448537119,2000,10-component clustering PCA space,Chosen operating linkage; balanced merges suit portfolio segmentation
+complete,0.6740954946826448,2000,10-component clustering PCA space,"Comparison linkage; higher fidelity can coexist with chained, unusable groups"
+average,0.8087716821896658,2000,10-component clustering PCA space,"Comparison linkage; higher fidelity can coexist with chained, unusable groups"

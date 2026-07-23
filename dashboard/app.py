@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import math
 import os
 import textwrap
@@ -11,8 +12,8 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from dash import ALL, Dash, Input, Output, State, ctx, dash_table, dcc, html
-from dash.dash_table.Format import Format, Scheme
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,13 @@ P1 = ROOT / "results/phase1_preprocessing"
 P2 = ROOT / "results/phase2_clustering"
 P3 = ROOT / "results/phase3_association"
 P4 = ROOT / "results/phase4_anomaly"
+
+
+def image_data_uri(path: Path) -> str:
+    return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+
+
+LINKAGE_COMPARISON_SRC = image_data_uri(P2 / "linkage_comparison.png")
 
 
 def read_csv(path: Path, **kwargs) -> pd.DataFrame:
@@ -35,66 +43,87 @@ def read_optional(path: Path, columns: list[str] | None = None) -> pd.DataFrame:
 
 
 quality = read_csv(P1 / "data_quality_summary.csv")
-feature_importance = read_csv(P1 / "feature_importance.csv")
 portfolio = read_csv(P1 / "portfolio_context.csv")
 cluster_names = read_csv(P2 / "cluster_names.csv").sort_values("cluster_id")
 cluster_business = read_csv(P2 / "cluster_business_summary.csv")
 cluster_feature_summary = read_csv(P2 / "cluster_summary.csv")
+if "std_diff" not in cluster_feature_summary:
+    if "rel_diff_pct" not in cluster_feature_summary:
+        raise ValueError("cluster_summary.csv needs std_diff. Run Phase 2 again.")
+    # Legacy Phase 2 stored standardized differences multiplied by 100 under
+    # a misleading percent-style name. Convert that artifact back to SD units.
+    cluster_feature_summary["std_diff"] = cluster_feature_summary["rel_diff_pct"] / 100
 cluster_comparison = read_csv(P2 / "cluster_comparison_long.csv")
 cluster_viz = read_csv(P2 / "cluster_viz_sample.csv")
 dbscan_viz = read_csv(P2 / "dbscan_umap_sample.csv")
 k_selection = read_csv(P2 / "k_selection.csv")
+k_stability = read_csv(P2 / "k_stability.csv")
 pca_sensitivity = read_optional(P2 / "pca_cluster_sensitivity.csv")
 method_agreement = read_optional(P2 / "method_agreement.csv")
-rule_view = read_csv(P3 / "rule_visual_summary.csv")
-rule_segment = read_csv(P3 / "rule_segment_summary.csv")
+business_rules = read_csv(P3 / "business_rules_final.csv").sort_values("rank").reset_index(drop=True)
 algo_comparison = read_csv(P3 / "algo_comparison.csv")
+rule_screening = read_csv(P3 / "rule_screening_summary.csv")
 anomaly_summary = read_csv(P4 / "anomaly_summary.csv").iloc[0]
 anomaly_investigation = read_csv(P4 / "anomaly_investigation.csv")
+segment_credit_concentration = read_csv(P4 / "segment_credit_concentration.csv")
 anomaly_drivers = read_csv(P4 / "anomaly_driver_summary.csv")
 anomaly_by_segment = read_csv(P4 / "anomaly_review_by_segment.csv", index_col=0)
 detector_overlap = read_csv(P4 / "detector_jaccard_overlap.csv", index_col=0)
+queue_sensitivity = read_csv(P4 / "ensemble_single_axis_sensitivity.csv")
 anomaly_pca = read_csv(P4 / "pca_anomaly_sample.csv")
-backtest_metrics = read_csv(P4 / "cluster_default_backtest_metrics.csv")
-cluster_rates = read_csv(P4 / "cluster_default_rates.csv")
-backtest_cm = read_csv(P4 / "cluster_default_confusion_matrix.csv")
-policy_sweep = read_csv(P4 / "cluster_default_policy_sweep.csv")
-reference_metrics = read_optional(P4 / "supervised_reference_metrics.csv")
-outcome_comparison = read_optional(P4 / "outcome_method_comparison.csv")
 
-# Transitional fallbacks keep the app importable while a user is rerunning the
-# phase notebooks; the verified run replaces these with denominator-labelled
-# fields from the corrected Phase 3 artefact.
-if "support_count" not in rule_view:
-    rule_view["support_count"] = (rule_view["support"] * 356_255).round().astype(int)
-if "metric_scope" not in rule_view:
-    rule_view["metric_scope"] = "Run Phase 3 again to show which applications were used"
-if "Context" not in rule_view:
-    rule_view["Context"] = rule_view["Segment"]
+PORTFOLIO_VALUES = portfolio.set_index("measure")["value"].to_dict()
+COMBINED_APPLICATIONS = int(
+    PORTFOLIO_VALUES.get("Applications", PORTFOLIO_VALUES.get("Combined applications"))
+)
+
+if int(segment_credit_concentration["applications"].sum()) != COMBINED_APPLICATIONS:
+    raise ValueError("Segment credit concentration does not reconcile to the application count.")
+
+if "Queue Route" not in anomaly_investigation:
+    anomaly_investigation["Queue Route"] = np.where(
+        anomaly_investigation["Detector Count"].ge(3),
+        "Detector consensus",
+        "Extreme single-axis value",
+    )
+
+REQUIRED_BUSINESS_RULE_COLUMNS = {
+    "rank", "business_rule", "Segment", "Context", "context_n", "condition_count",
+    "support_count", "support", "consequent_baseline", "confidence", "uplift_pp", "lift",
+    "business_theme", "source_families", "why_it_matters", "review_action", "caveat",
+    "metric_scope",
+}
+missing_rule_columns = REQUIRED_BUSINESS_RULE_COLUMNS.difference(business_rules.columns)
+if missing_rule_columns:
+    raise ValueError(
+        "business_rules_final.csv is missing fields needed by the dashboard: "
+        + ", ".join(sorted(missing_rule_columns))
+        + ". Run Phase 3 again."
+    )
 
 
 CLUSTER_COPY = {
-    "Intensive Card User": {
-        "profil_risiko": "Card balance review",
-        "profile_summary": "This group has the heaviest card use and the most recorded card history.",
-        "watch_items": "Check current utilisation, balances, arrears, and whether the limit still fits the customer.",
-        "recommended_action": "Check card balances and payment capacity before changing a limit. If policy allows, consider whether consolidation would help.",
+    "Historical Card-Use Intensity": {
+        "profil_risiko": "Revolving-credit history review",
+        "profile_summary": "This group has the heaviest recorded revolving-credit use in previous Home Credit accounts.",
+        "watch_items": "Verify current balances, utilisation, arrears, affordability, and whether any existing limit still fits.",
+        "recommended_action": "Use the historical pattern to focus the review, then verify the current position before changing a limit or exposure.",
     },
     "Repayment-Stress History": {
         "profil_risiko": "Repayment review",
         "profile_summary": "Late repayments are what most clearly set this group apart.",
-        "watch_items": "Check when the delays happened, how serious they were, whether they were cured, and what the customer can afford now.",
-        "recommended_action": "Review the repayment history and current affordability. If the customer is already in hardship, follow the contact or restructuring policy.",
+        "watch_items": "Check when the delays happened, how serious they were, whether they were cured, and what the applicant can afford now.",
+        "recommended_action": "Review the repayment history and current affordability. If the applicant is already in hardship, follow the contact or restructuring policy.",
     },
-    "Thin-File / Low-Intensity": {
-        "profil_risiko": "Standard thin-file review",
-        "profile_summary": "This group uses fewer credit products and has less recorded credit history.",
-        "watch_items": "Check whether the record is genuinely clean or simply too thin to judge.",
-        "recommended_action": "Use the standard underwriting process. If the file is thin, ask for permitted supporting evidence instead of treating missing history as risk.",
+    "Lower-Intensity Credit Footprint": {
+        "profil_risiko": "Standard evidence review",
+        "profile_summary": "This group has lower product activity and smaller loan amounts than the other segments.",
+        "watch_items": "Check coverage source by source. Lower activity does not mean that useful history is absent or that payment risk is lower.",
+        "recommended_action": "Use the standard underwriting process. Ask for permitted supporting evidence only when a relevant source is genuinely unavailable.",
     },
-    "High-Exposure Applicant": {
+    "Larger-Loan Affordability": {
         "profil_risiko": "Affordability review",
-        "profile_summary": "This group asks for larger loans and carries the highest payment burden.",
+        "profile_summary": "This group has larger current-loan credit amounts and the highest scheduled payment burden.",
         "watch_items": "Confirm income, total obligations, and whether the payments still work if income falls.",
         "recommended_action": "Confirm sustainable income and stress-test the proposed payment before increasing exposure.",
     },
@@ -124,7 +153,7 @@ QUALITY_COPY = {
     ),
     "EXT_SOURCE_1 unavailable": (
         "External score 1 is missing",
-        "The score is unavailable or the credit file is thin. Missing information is not adverse behaviour.",
+        "This source did not return or record a score. The dataset does not say why, and missing information is not adverse behaviour.",
         "Use the median for modelling and keep a separate missing-score flag.",
     ),
     "No car-age value": (
@@ -134,31 +163,14 @@ QUALITY_COPY = {
     ),
 }
 
-RULE_TERM_LABELS = {
-    "card_utilisation_high": "high card utilisation",
-    "card_utilisation_moderate": "moderate card utilisation",
-    "cluster_0_card_intensive": "card-intensive cluster",
-    "cluster_4_history_rich": "history-rich cluster",
-    "credit_small": "smaller requested loan",
-    "credit_large": "larger requested loan",
-    "repayment_some_late": "some late repayments",
-    "repayment_serious_late": "serious late repayments",
-    "repayment_not_observed": "no recorded instalment history",
-    "leverage_under_3x": "credit below 3x income",
-    "burden_under_20pct": "annuity below 20% of income",
-    "previous_refusals_repeated": "repeated previous refusals",
-    "previous_deep": "extensive previous-application history",
-    "previous_none": "no previous applications recorded",
-    "previous_outcome_not_observed": "no previous-application outcome recorded",
-    "card_history_not_observed": "no recorded card history",
-}
-
 ANOMALY_DRIVER_LABELS = {
-    "Current product delinquency signal": "Card or POS arrears",
+    "Current product delinquency signal": "Recorded card or POS arrears",
     "Material installment delinquency": "Long instalment delay",
     "Persistent underpayment": "Repeated underpayment",
     "Repeated severe installment lateness": "Repeated severe instalment delays",
-    "High revolving-credit utilisation": "High card utilisation",
+    "High revolving-credit utilisation": "High previous-account card utilisation",
+    "High card utilisation": "High historical card utilisation",
+    "Card or POS arrears": "Historical card or POS arrears",
     "High credit-to-income leverage": "High credit compared with income",
     "Frequent installment lateness": "Frequent instalment delays",
     "Weak combined external score": "Low combined external score",
@@ -169,10 +181,10 @@ ANOMALY_DRIVER_LABELS = {
     "Unusual AMT_ANNUITY": "Unusual annuity amount",
     "Unusual ANNUITY_TO_INCOME": "Unusual annuity-to-income ratio",
     "Unusual INST_PAYMENT_RATIO_MEAN": "Unusual payment-to-due ratio",
-    "Unusual AMT_CREDIT": "Unusual requested credit",
+    "Unusual AMT_CREDIT": "Unusual current-loan credit amount",
     "Unusual BUREAU_DEBT_TO_CREDIT_RATIO": "Unusual bureau debt-to-credit ratio",
-    "Unusual CC_UTILIZATION_MAX": "Unusual maximum card utilisation",
-    "Unusual CREDIT_TERM_MONTHS": "Unusual estimated credit term",
+    "Unusual CC_UTILIZATION_MAX": "Unusual maximum previous-account card utilisation",
+    "Unusual CREDIT_TO_ANNUITY": "Unusual credit-to-annuity proxy",
     "Unusual CREDIT_TO_INCOME": "Unusual credit-to-income ratio",
 }
 
@@ -181,7 +193,7 @@ ANOMALY_INTERPRETATION_COPY = {
         "Repayment or affordability evidence supports this flag. A reviewer should check it before anyone takes action."
     ),
     "The record contains a logical or unit inconsistency. This is a data-governance issue, not evidence that the applicant will default.": (
-        "The values do not agree or may use different units. Confirm or fix the data before using it. This is not evidence of default."
+        "The values do not agree or may use different units. Confirm or fix the data before using it. This is not evidence of payment difficulty."
     ),
     "The applicant is statistically unusual but has no identified affordability, delinquency, or logical-data breach. Rarity alone is not a credit-risk conclusion.": (
         "This application is unusual, but we found no clear affordability, repayment, or data-quality problem. Unusual does not mean risky."
@@ -190,7 +202,7 @@ ANOMALY_INTERPRETATION_COPY = {
 
 REVIEW_TYPE_LABELS = {
     "Affordability / repayment review": "Affordability and repayment review",
-    "Data consistency check": "Data quality check",
+    "Data consistency check": "Source reconciliation",
     "Rare but plausible profile": "Unusual but plausible",
 }
 
@@ -207,11 +219,11 @@ ACTION_COPY = {
     "review recurrence, recency, and any cure before taking a credit action": "Check how often the delays happened, how recent they were, and whether the account was brought up to date.",
     "review lateness recency and causes and confirm the proposed payment schedule is affordable": "Check when and why the late payments happened, then confirm that the proposed schedule is affordable.",
     "reconcile partial payments and unresolved balances before increasing exposure": "Check partial payments and unresolved balances before increasing exposure.",
-    "review current card balances, payment capacity, and limit suitability; do not infer distress from utilisation alone": "Check card balances, payment capacity, and whether the limit still fits. High utilisation alone does not prove financial distress.",
-    "inspect recency and product-level arrears before changing exposure": "Check how recent the card or POS arrears are before changing exposure.",
+    "review current card balances, payment capacity, and limit suitability; do not infer distress from utilisation alone": "The recorded utilisation comes from previous Home Credit accounts. Verify whether a revolving facility is still open, obtain its current balance and payment status, and assess limit suitability only if a current limit exists. Historical high utilisation alone does not prove financial distress.",
+    "inspect recency and product-level arrears before changing exposure": "The recorded card or POS arrears are historical aggregates. Check the source timeline, cure status, and whether any related facility is still open before changing current exposure.",
     "reconcile outstanding external obligations and include them in the affordability calculation": "Confirm outstanding external debts and include them in the affordability calculation.",
     "verify bureau recency, dispute status, and cure information before relying on the signal": "Check how recent the bureau arrears are, whether they are disputed, and whether they were cured.",
-    "review the underlying bureau information and use specific verified reasons rather than the score alone": "Check the underlying bureau information. Do not rely on the combined score by itself.",
+    "review the underlying bureau information and use specific verified reasons rather than the score alone": "Confirm which external scores were observed and whether their sources are valid. Reconcile them with directly observed income, repayment, and bureau evidence; do not use the combined score as a reason code.",
     "reconcile the earlier refusal reasons and confirm whether they remain current": "Check why earlier applications were refused and whether those reasons still apply.",
     "check reversals, prepayments, duplicated installments, and currency units": "Check for reversals, early payments, duplicate instalments, and inconsistent currency units.",
     "confirm the unusual fields and otherwise continue through the standard underwriting path": "Confirm the unusual values. If they are correct, continue with standard underwriting.",
@@ -220,15 +232,15 @@ ACTION_COPY = {
 FEATURE_TEXT_LABELS = {
     "BUREAU_DEBT_TO_CREDIT_RATIO": "bureau debt-to-credit ratio",
     "INST_PAYMENT_RATIO_MEAN": "average payment-to-due ratio",
-    "CC_UTILIZATION_MEAN": "average card utilisation",
-    "CC_UTILIZATION_MAX": "maximum card utilisation",
-    "CREDIT_TERM_MONTHS": "estimated credit term",
+    "CC_UTILIZATION_MEAN": "average previous-account card utilisation",
+    "CC_UTILIZATION_MAX": "maximum previous-account card utilisation",
+    "CREDIT_TO_ANNUITY": "credit-to-annuity payment-size proxy",
     "ANNUITY_TO_INCOME": "annuity-to-income ratio",
     "CREDIT_TO_INCOME": "credit-to-income ratio",
     "AMT_INCOME_TOTAL": "reported income",
-    "CC_AMT_BALANCE_MEAN": "average card balance",
+    "CC_AMT_BALANCE_MEAN": "average previous-account card balance",
     "AMT_ANNUITY": "annuity amount",
-    "AMT_CREDIT": "requested credit",
+    "AMT_CREDIT": "current-loan credit amount",
     "BUREAU_COUNT": "bureau-history depth",
     "INST_COUNT": "instalment-history depth",
     "PREV_COUNT": "previous-application history",
@@ -246,17 +258,30 @@ def as_sentence(value: str) -> str:
     return text if text.endswith((".", "!", "?")) else f"{text}."
 
 
-def humanize_rule(value: str) -> str:
-    def readable_side(side: str) -> str:
-        terms = [RULE_TERM_LABELS.get(part.strip(), part.strip().replace("_", " ")) for part in side.split(",")]
-        return " + ".join(terms)
-
-    raw = str(value)
+def humanize_business_pattern(value: str) -> str:
+    """Turn the exported condition/evidence pair into a presentation label."""
+    raw = str(value).replace("→", "->")
     if "->" not in raw:
-        return raw.replace("_", " ")
-    left, right = raw.split("->", 1)
-    readable = f"{readable_side(left)} -> {readable_side(right)}"
-    return readable[0].upper() + readable[1:]
+        return as_sentence(raw.replace("_", " ")).rstrip(".")
+    condition, evidence = [part.strip() for part in raw.split("->", 1)]
+    condition = condition[0].upper() + condition[1:] if condition else "Condition"
+    evidence = evidence[0].lower() + evidence[1:] if evidence else "associated evidence"
+    return f"{condition}; also observed more often: {evidence}"
+
+
+def clean_rule_prose(value: str) -> str:
+    """Apply small terminology fixes without changing the exported evidence."""
+    text = str(value).strip()
+    replacements = {
+        "requested credit": "current-loan credit amount",
+        "low default risk": "a lower chance of payment difficulty",
+        ".Then ": ". Then ",
+        ";Then ": "; then ",
+        "; then ": ". Then ",
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    return text
 
 
 def humanize_fragment(value: str) -> str:
@@ -271,11 +296,11 @@ def humanize_fragment(value: str) -> str:
         text = text.replace(technical, label)
     replacements = {
         "annuity is": "scheduled annuity equals",
-        "requested credit is": "requested credit equals",
+        "requested credit is": "current-loan credit amount equals",
         "x reported income": " times reported income",
         "maximum observed installment delay is": "the longest observed instalment delay is",
         "mean paid amount is": "the average payment is",
-        "mean card utilisation is": "average card utilisation is",
+        "mean card utilisation is": "average previous-account card utilisation is",
         " and maximum is": " and the maximum is",
         "mean days-past-due signal reaches": "average days past due reaches",
         "across card/POS history": "across card or POS history",
@@ -343,7 +368,7 @@ def humanize_recommendation(row: pd.Series) -> str:
             parts.append(humanize_fragment(clean))
 
     driver = ANOMALY_DRIVER_LABELS.get(row["Primary Driver"], row["Primary Driver"])
-    introduction = f"For applicant {int(row['SK_ID_CURR']):,}, start with the {str(driver).lower()} shown in the evidence."
+    introduction = f"For application {int(row['SK_ID_CURR']):,}, start with the {str(driver).lower()} shown in the evidence."
     guardrail = "Document what you checked in the case file. The cluster label alone is not a reason for a decision."
     return " ".join([introduction, *parts, guardrail])
 
@@ -357,11 +382,17 @@ for old_issue, (issue, meaning, treatment) in QUALITY_COPY.items():
     mask = quality["issue"].eq(old_issue)
     quality.loc[mask, ["issue", "business_meaning", "treatment"]] = [issue, meaning, treatment]
 
-rule_view["short_rule"] = rule_view["short_rule"].map(humanize_rule)
-rule_view["metric_scope"] = rule_view["metric_scope"].replace({
-    "Full portfolio; Apriori/FP-Growth/ECLAT exact agreement": "Full portfolio. Apriori, FP-Growth, and ECLAT found the same rule.",
-    "Within-segment FP-Growth; metrics use the segment denominator": "This cluster only. Support and confidence use this cluster as the denominator.",
-})
+business_rules["Business pattern"] = business_rules["business_rule"].map(humanize_business_pattern)
+for column in ["why_it_matters", "review_action", "caveat", "metric_scope"]:
+    business_rules[column] = business_rules[column].map(clean_rule_prose)
+for column in ["rank", "context_n", "condition_count", "support_count"]:
+    business_rules[column] = pd.to_numeric(business_rules[column], errors="raise").round().astype(int)
+for column in ["support", "consequent_baseline", "confidence", "uplift_pp", "lift"]:
+    business_rules[column] = pd.to_numeric(business_rules[column], errors="raise")
+business_rules["condition_share"] = business_rules["condition_count"] / business_rules["context_n"]
+business_rules["baseline_count"] = np.rint(
+    business_rules["consequent_baseline"] * business_rules["context_n"]
+).astype(int)
 
 raw_anomaly_evidence = anomaly_investigation["Record Evidence"].copy()
 anomaly_investigation["Recommended Action"] = anomaly_investigation.apply(humanize_recommendation, axis=1)
@@ -387,23 +418,35 @@ SEGMENT_COLORS = {
     name: SEGMENT_PALETTE[i % len(SEGMENT_PALETTE)]
     for i, name in enumerate(SEGMENT_ORDER)
 }
+# Short forms for axis ticks. Full segment names ("Historical Card-Use
+# Intensity") are 20-30 characters; on a narrow chart axis five of them
+# collide with each other or with adjacent cell text. The full name is
+# always still available in the hover tooltip.
+CONTEXT_SHORT = {
+    "Portfolio-wide": "Portfolio-wide",
+    "Lower-Intensity Credit Footprint": "Lower-Intensity",
+    "Historical Card-Use Intensity": "Card-Use Intensity",
+    "History-Rich Credit User": "History-Rich",
+    "Larger-Loan Affordability": "Larger-Loan",
+    "Repayment-Stress History": "Repayment-Stress",
+}
 REVIEW_COLORS = {
     "Affordability and repayment review": "#B5534C",
-    "Data quality check": "#B98535",
+    "Source reconciliation": "#B98535",
     "Unusual but plausible": "#356A8A",
 }
 SEVERITY_COLORS = {
-    "Typical record": "#CBD5E1",
+    "No detector flag": "#CBD5E1",
     "One detector flag": "#D5AE5D",
-    "Multiple detector flags": "#C97543",
-    "Flagged by 3+ methods": "#A93F3A",
+    "Two detector signals": "#C97543",
+    "Targeted review queue": "#A93F3A",
 }
 FEATURE_LABELS = {
     "EXT_SOURCE_1": "External score 1",
     "EXT_SOURCE_2": "External score 2",
     "EXT_SOURCE_3": "External score 3",
     "AMT_INCOME_TOTAL": "Income",
-    "AMT_CREDIT": "Requested credit",
+    "AMT_CREDIT": "Current-loan credit amount",
     "AMT_ANNUITY": "Annuity",
     "CREDIT_TO_INCOME": "Credit / income",
     "ANNUITY_TO_INCOME": "Annuity / income",
@@ -422,38 +465,32 @@ FEATURE_LABELS = {
     "INST_COUNT": "Instalment record count",
     "POS_MONTHS_COUNT": "POS / cash monthly records",
     "POS_SK_DPD_MEAN": "Average POS / cash delay (days)",
-    "CC_UTILIZATION_MEAN": "Average card utilisation",
-    "CC_UTILIZATION_MAX": "Maximum card utilisation",
-    "CC_AMT_BALANCE_MEAN": "Average card balance",
-    "CC_MONTHS_COUNT": "Card monthly records",
-    "CC_SK_DPD_MEAN": "Average card delay (days)",
+    "CC_UTILIZATION_MEAN": "Average previous-account card utilisation",
+    "CC_UTILIZATION_MAX": "Maximum previous-account card utilisation",
+    "CC_AMT_BALANCE_MEAN": "Average previous-account card balance",
+    "CC_MONTHS_COUNT": "Previous-account card monthly records",
+    "CC_SK_DPD_MEAN": "Average previous-account card delay (days)",
     "AMT_REQ_CREDIT_BUREAU_YEAR": "Recent bureau enquiries",
-    "CREDIT_TERM_MONTHS": "Estimated credit term",
+    "CREDIT_TO_ANNUITY": "Credit / annuity proxy",
 }
 
-def metric(name: str, frame: pd.DataFrame = backtest_metrics, default: float = np.nan) -> float:
-    if frame.empty or "metric" not in frame:
-        return float(default)
-    values = frame.loc[frame["metric"].eq(name), "value"]
-    return float(values.iloc[0]) if len(values) else float(default)
-
-
 def fmt_int(value: float) -> str:
-    return f"{int(round(value)):,}"
+    return "N/A" if not np.isfinite(value) else f"{int(round(value)):,}"
 
 
 def fmt_pct(value: float, digits: int = 1) -> str:
-    return ", " if not np.isfinite(value) else f"{value * 100:.{digits}f}%"
+    return "N/A" if not np.isfinite(value) else f"{value * 100:.{digits}f}%"
 
 
-def wilson_interval(successes: int, total: int, z: float = 1.959964) -> tuple[float, float]:
-    if total <= 0:
-        return np.nan, np.nan
-    rate = successes / total
-    denominator = 1 + (z ** 2 / total)
-    center = (rate + z ** 2 / (2 * total)) / denominator
-    margin = z * math.sqrt(rate * (1 - rate) / total + z ** 2 / (4 * total ** 2)) / denominator
-    return center - margin, center + margin
+def require_one(frame: pd.DataFrame, mask: pd.Series, description: str) -> pd.Series:
+    """Return one required business-evidence row with an actionable error."""
+    matches = frame.loc[mask]
+    if len(matches) != 1:
+        raise ValueError(
+            f"Expected exactly one {description} row, found {len(matches)}. "
+            "Rebuild the phase artifacts before starting the dashboard."
+        )
+    return matches.iloc[0]
 
 
 def validate_cluster_identity() -> None:
@@ -468,14 +505,14 @@ def validate_cluster_identity() -> None:
         .sort_values("CLUSTER_KMEANS")
         .reset_index(drop=True)
     )
-    rate_identity = (
-        cluster_rates[["CLUSTER_KMEANS", "Segment"]]
+    concentration_identity = (
+        segment_credit_concentration[["CLUSTER_KMEANS", "Segment"]]
         .sort_values("CLUSTER_KMEANS")
         .reset_index(drop=True)
     )
     if not expected.equals(business_identity):
         raise ValueError("Phase 2 files disagree on cluster names, IDs, or applicant counts. Run Phase 2 again.")
-    if not expected[["CLUSTER_KMEANS", "Segment"]].equals(rate_identity):
+    if not expected[["CLUSTER_KMEANS", "Segment"]].equals(concentration_identity):
         raise ValueError("Phase 4 cluster names do not match Phase 2. Run Phases 2 through 4 again in order.")
 
 
@@ -491,9 +528,8 @@ cluster_detail = (
         validate="one_to_one",
     )
     .merge(
-        cluster_rates[[
-            "CLUSTER_KMEANS", "train_applicants", "defaults", "default_rate",
-            "portfolio_default_rate", "lift_vs_portfolio",
+        segment_credit_concentration[[
+            "CLUSTER_KMEANS", "credit_amount_share", "annuity_amount_share",
         ]],
         on="CLUSTER_KMEANS",
         how="left",
@@ -504,25 +540,25 @@ COMBINED_APPLICATIONS = int(cluster_detail["n_applicants"].sum())
 cluster_detail["portfolio_share"] = cluster_detail["n_applicants"] / COMBINED_APPLICATIONS
 
 PROFILE_METRICS = [
-    ("median_income", "Median income", "amount", "Median across applicants"),
-    ("median_credit", "Median requested credit", "amount", "Median across applicants"),
-    ("median_credit_to_income", "Credit / income", "multiple", "Median across applicants"),
-    ("median_annuity_to_income", "Annuity / income", "pct", "Median across applicants"),
+    ("median_income", "Median income", "amount", "Median across applications"),
+    ("median_credit", "Median current-loan credit amount", "amount", "Median across applications"),
+    ("median_credit_to_income", "Credit / income", "multiple", "Median across applications"),
+    ("median_annuity_to_income", "Annuity / income", "pct", "Median across applications"),
     ("median_installment_late_share", "Instalment late share", "pct", "Median across all applications. A zero can mean no recorded history"),
     ("median_external_score_2", "External score 2", "decimal", "Observed or imputed value used for clustering"),
-    ("median_card_utilisation", "Card utilisation", "pct", "Median across all applications. A zero can mean no recorded history"),
-    ("default_rate", "Observed default rate", "pct", "Training records with TARGET only"),
+    ("median_card_utilisation", "Historical card utilisation", "pct", "Previous-credit history. A zero can mean no recorded history"),
+    ("credit_amount_share", "Share of portfolio loan amount", "pct", "Segment total of recorded loan amounts over the portfolio total"),
 ]
 
 PROFILE_AXIS_LABELS = {
     "median_income": "Median income",
-    "median_credit": "Requested credit",
+    "median_credit": "Current-loan credit",
     "median_credit_to_income": "Credit / income",
     "median_annuity_to_income": "Annuity / income",
     "median_installment_late_share": "Late instalments",
     "median_external_score_2": "External score 2",
-    "median_card_utilisation": "Card utilisation",
-    "default_rate": "Observed default rate",
+    "median_card_utilisation": "Historical card utilisation",
+    "credit_amount_share": "Loan amount share",
 }
 
 def wrap_segment_name(name: str, width: int = 16) -> str:
@@ -552,7 +588,7 @@ SEGMENT_HEADER_LABELS = {name: wrap_segment_name(name) for name in cluster_names
 SEGMENT_TICK_LABELS = {
     row["nama"]: (
         f"<b>{SEGMENT_HEADER_LABELS[row['nama']]}</b><br>"
-        f"{int(row['n_applicants']):,} applicants<br>{row['portfolio_share']:.1%} of portfolio"
+        f"{int(row['n_applicants']):,} applications<br>{row['portfolio_share']:.1%} of the portfolio"
     )
     for _, row in cluster_detail.iterrows()
 }
@@ -560,7 +596,7 @@ SEGMENT_TICK_LABELS = {
 
 def format_profile_value(value: float, kind: str) -> str:
     if not np.isfinite(value):
-        return ", "
+        return "N/A"
     if kind == "count":
         return fmt_int(value)
     if kind == "amount":
@@ -576,7 +612,7 @@ def format_profile_value(value: float, kind: str) -> str:
 
 def format_profile_cell(value: float, kind: str) -> str:
     if not np.isfinite(value):
-        return ", "
+        return "N/A"
     if kind == "amount":
         return f"{value / 1000:.0f}k"
     return format_profile_value(value, kind)
@@ -589,15 +625,15 @@ def wrap_hover(value: str, width: int = 42) -> str:
 def cluster_top_features(cluster_id: int, limit: int = 3) -> str:
     features = (
         cluster_feature_summary.loc[cluster_feature_summary["cluster_id"].eq(cluster_id)]
-        .assign(magnitude=lambda frame: frame["rel_diff_pct"].abs())
+        .assign(magnitude=lambda frame: frame["std_diff"].abs())
         .sort_values("magnitude", ascending=False)
         .head(limit)
     )
     labels = []
     for item in features.itertuples():
         feature = FEATURE_LABELS.get(item.fitur, item.fitur.replace("_", " ").title())
-        direction = "above" if item.rel_diff_pct >= 0 else "below"
-        labels.append(f"{feature}: {abs(item.rel_diff_pct) / 100:.2f} SD {direction} the portfolio average")
+        direction = "above" if item.std_diff >= 0 else "below"
+        labels.append(f"{feature}: {abs(item.std_diff):.2f} SD {direction} the portfolio mean")
     return "<br> " + "<br> ".join(labels)
 
 
@@ -617,14 +653,35 @@ def cluster_profile_matrix_figure() -> go.Figure:
         metric_hover = []
         for segment, value in values.items():
             row = details.loc[segment]
-            if key == "default_rate":
-                ci_low, ci_high = wilson_interval(int(row["defaults"]), int(row["train_applicants"]))
+            if key == "credit_amount_share":
                 comparison_note = (
-                    f"{int(row['defaults']):,} defaults among {int(row['train_applicants']):,} training applications<br>"
-                    f"95% CI {ci_low:.2%}-{ci_high:.2%}<br>{row['lift_vs_portfolio']:.2f}x the training-set average"
+                    f"This segment holds {value:.1%} of all recorded loan amounts "
+                    f"while holding {row['portfolio_share']:.1%} of applications<br>"
+                    "Amounts are recorded loan values, not balances or losses"
                 )
             else:
-                comparison_note = f"Number {int(ranks.loc[segment])} of 5, from highest to lowest"
+                tied = np.isclose(values.to_numpy(), float(value), rtol=1e-9, atol=1e-12)
+                tie_count = int(tied.sum())
+                higher_count = int((values > float(value) + 1e-12).sum())
+                lower_count = int((values < float(value) - 1e-12).sum())
+                if tie_count == len(values):
+                    rank_word = "Tied across all five segments"
+                elif tie_count > 1 and higher_count == 0:
+                    rank_word = "Tied highest"
+                elif tie_count > 1 and lower_count == 0:
+                    rank_word = "Tied lowest"
+                elif tie_count > 1:
+                    rank_word = "Tied in the middle"
+                else:
+                    rank = int(ranks.loc[segment])
+                    rank_word = {
+                        1: "Highest", 2: "Second-highest", 3: "Middle",
+                        4: "Second-lowest", 5: "Lowest",
+                    }[rank]
+                comparison_note = (
+                    f"{rank_word} for this measure; "
+                    "this rank is descriptive, not a risk grade"
+                )
             metric_hover.append([
                 segment,
                 format_profile_value(float(value), kind),
@@ -720,16 +777,25 @@ def graph(
     fig: go.Figure,
     size: str = "standard",
     min_width: int | None = None,
+    mobile_min_width: int | None = None,
 ):
+    style = {
+        "height": "var(--plot-height)",
+        "minHeight": "var(--plot-height)",
+        **({"minWidth": f"{min_width}px"} if min_width else {}),
+        **({"--mobile-min-width": f"{mobile_min_width}px"} if mobile_min_width else {}),
+    }
     component = dcc.Graph(
         figure=fig,
         responsive=True,
         className=f"plot plot-{size}",
-        style={"height": "var(--plot-height)", "minHeight": "var(--plot-height)",
-               **({"minWidth": f"{min_width}px"} if min_width else {})},
+        style=style,
         config={"displaylogo": False, "responsive": True, "modeBarButtonsToRemove": ["lasso2d", "select2d"]},
     )
-    return html.Div(component, className="plot-scroll" if min_width else "plot-wrap")
+    classes = ["plot-scroll" if min_width else "plot-wrap"]
+    if mobile_min_width:
+        classes.append("plot-scroll-mobile")
+    return html.Div(component, className=" ".join(classes))
 
 
 def card(label: str, value: str, note: str, tone: str = "blue") -> html.Div:
@@ -770,13 +836,50 @@ fig_quality.update_xaxes(title="Share of all applications (%)", range=[0, qualit
 fig_quality.update_yaxes(title="")
 chart_layout(fig_quality, legend=False, left=150)
 
-fi = feature_importance.head(10).sort_values("mutual_info").copy()
-fi["label"] = fi["feature"].map(FEATURE_LABELS).fillna(fi["feature"].str.replace("_", " ").str.title())
-fig_importance = px.bar(fi, x="mutual_info", y="label", orientation="h", color_discrete_sequence=["#4F7D65"])
-fig_importance.update_traces(hovertemplate="<b>%{y}</b><br>Mutual information: %{x:.4f}<extra></extra>")
-fig_importance.update_xaxes(title="Mutual information with TARGET (training data)")
-fig_importance.update_yaxes(title="")
-chart_layout(fig_importance, legend=False, left=155)
+# Evidence coverage per segment: which review sources actually exist for the
+# applications in each group. This replaces the earlier label-association
+# chart; the portfolio is presented without any outcome label.
+#
+# Short axis labels plus FIXED (non-automargin) margins, sized by hand for
+# the longest short label on each axis. automargin measures rendered tick
+# text and can settle on a bad value the first time this chart mounts inside
+# a Dash tab-switch callback; a fixed margin has no such measurement step,
+# so it cannot mis-fire.
+EVIDENCE_SOURCE_SHORT = {
+    "Previous Home Credit card history": "Prior card history",
+    "At least one external score": "Any external score",
+}
+evidence_coverage = read_csv(P2 / "segment_evidence_coverage.csv")
+coverage_matrix = evidence_coverage.pivot(
+    index="Evidence source", columns="Segment", values="coverage"
+).reindex(columns=SEGMENT_ORDER)
+fig_evidence_coverage = go.Figure(go.Heatmap(
+    z=coverage_matrix.values,
+    x=[CONTEXT_SHORT.get(c, c) for c in coverage_matrix.columns],
+    y=[EVIDENCE_SOURCE_SHORT.get(r, r) for r in coverage_matrix.index],
+    colorscale=[[0, "#F7F7F2"], [1, "#356A8A"]],
+    zmin=0,
+    zmax=1,
+    text=np.vectorize(lambda v: f"{v:.0%}")(coverage_matrix.values),
+    texttemplate="%{text}",
+    textfont=dict(size=12, color="#173647"),
+    showscale=False,
+    hovertemplate=(
+        "<b>%{x}</b><br>%{y}: %{z:.0%} of applications<extra></extra>"
+    ),
+))
+fig_evidence_coverage.update_layout(
+    template="plotly_white",
+    autosize=True,
+    margin=dict(l=150, r=20, t=10, b=40),
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="#FFFFFF",
+    font=dict(family="Inter, Segoe UI, sans-serif", size=12, color="#203746"),
+    showlegend=False,
+    hoverlabel=dict(bgcolor="#173647", font_color="white"),
+)
+fig_evidence_coverage.update_xaxes(gridcolor="#E6EDF1", zeroline=False, automargin=False, tickangle=0)
+fig_evidence_coverage.update_yaxes(gridcolor="#E6EDF1", zeroline=False, automargin=False)
 
 
 # Segmentation figures
@@ -820,6 +923,9 @@ fig_kmeans = px.scatter(
 )
 fig_kmeans.update_traces(marker=dict(size=4), hovertemplate="%{fullData.name}<br>PC1 %{x:.2f} - PC2 %{y:.2f}<extra></extra>")
 chart_layout(fig_kmeans, bottom=60)
+# Five long segment names wrap onto several legend rows once the chart fits
+# its column instead of forcing a horizontal scrollbar; reserve headroom.
+fig_kmeans.update_layout(margin=dict(t=70), legend=dict(font=dict(size=11)))
 
 dense_db = dbscan_viz[dbscan_viz["IS_NOISE"].eq(0)]
 noise_db = dbscan_viz[dbscan_viz["IS_NOISE"].eq(1)]
@@ -833,20 +939,45 @@ fig_dbscan = px.scatter(
 )
 fig_dbscan.update_traces(
     marker=dict(size=4),
-    hovertemplate="Applicant %{customdata[0]}<br>%{customdata[1]}<br>DBSCAN label %{customdata[2]}<extra></extra>",
+    hovertemplate="Application %{customdata[0]}<br>%{customdata[1]}<br>DBSCAN label %{customdata[2]}<extra></extra>",
 )
 chart_layout(fig_dbscan, bottom=55)
 
-fig_k_selection = go.Figure()
+stability_view = (
+    k_stability.groupby("k", as_index=False)["adjusted_rand_index"]
+    .mean()
+    .rename(columns={"adjusted_rand_index": "mean_ari"})
+)
+stability_by_k = stability_view.set_index("k")["mean_ari"]
+fig_k_selection = make_subplots(
+    rows=2, cols=1, shared_xaxes=True, vertical_spacing=.16,
+    subplot_titles=("Separation on one fixed evaluation sample", "Seed stability for the detailed alternatives"),
+)
 fig_k_selection.add_trace(go.Scatter(
     x=k_selection["k"], y=k_selection["silhouette"], mode="lines+markers",
     name="Silhouette", line=dict(color="#356A8A", width=3),
     hovertemplate="K=%{x}<br>Silhouette %{y:.3f}<extra></extra>",
-))
-fig_k_selection.add_vline(x=5, line_dash="dash", line_color="#B98535", annotation_text="Kept: K=5")
-fig_k_selection.update_xaxes(title="Number of clusters (K)", dtick=1)
-fig_k_selection.update_yaxes(title="Silhouette", rangemode="tozero")
+), row=1, col=1)
+fig_k_selection.add_trace(go.Bar(
+    x=stability_view["k"], y=stability_view["mean_ari"], name="Mean seed ARI",
+    marker_color=["#4F7D65" if int(k) == 5 else "#CBD5E1" for k in stability_view["k"]],
+    text=stability_view["mean_ari"], texttemplate="%{text:.3f}", textposition="outside",
+    hovertemplate="K=%{x}<br>Mean seed ARI %{y:.3f}<extra></extra>",
+), row=2, col=1)
+fig_k_selection.add_vline(
+    x=5, line_dash="dash", line_color="#B98535",
+    annotation_text="K=5 selected", annotation_position="top left",
+    annotation_font=dict(size=11, color="#8A6A2E"),
+    row=1, col=1,
+)
+# Row 2 repeats the same line without a second text label: the green bar
+# already marks K=5, and a duplicate annotation collided with its value text.
+fig_k_selection.add_vline(x=5, line_dash="dash", line_color="#B98535", row=2, col=1)
+fig_k_selection.update_xaxes(title="Number of segments (K)", dtick=1, row=2, col=1)
+fig_k_selection.update_yaxes(title="Silhouette", rangemode="tozero", row=1, col=1)
+fig_k_selection.update_yaxes(title="Mean ARI", range=[0, 1.15], row=2, col=1)
 chart_layout(fig_k_selection, legend=False)
+fig_k_selection.update_layout(height=500)
 
 if not pca_sensitivity.empty:
     fig_pca_sensitivity = px.scatter(
@@ -866,18 +997,184 @@ else:
     chart_layout(fig_pca_sensitivity, legend=False)
 
 
-# Rule figures
-fig_rules = px.scatter(
-    rule_view.sort_values("rank"), x="lift", y="rank", color="Segment", size="confidence",
-    color_discrete_map=SEGMENT_COLORS,
-    custom_data=["short_rule", "support", "confidence", "support_count", "metric_scope"],
+# Rule figures. The business view compares each rule with its own stated
+# population. That matters because portfolio-wide and segment rules do not use
+# the same denominator.
+#
+# Axis labels stay compact on purpose: the full business sentence made every
+# tick three to four lines tall, which overlapped the neighbouring rows. The
+# tick now carries the rule number, a short context, and a shorthand pattern;
+# the complete sentence lives in the hover.
+RULE_TOKEN_SHORT = {
+    "bureau_debt_high": "bureau debt ≥80%",
+    "bureau_debt_moderate": "bureau debt 30-80%",
+    "bureau_debt_low": "bureau debt <30%",
+    "external_score_weak": "weak external scores",
+    "external_score_strong": "strong external scores",
+    "card_utilisation_high": "card use ≥80%",
+    "card_utilisation_moderate": "card use <80%",
+    "previous_refusals_repeated": "3+ prior refusals",
+    "previous_approval_high": "75%+ prior approvals",
+    "previous_outcome_mixed": "mixed prior outcomes",
+    "repayment_some_late": "some late instalments",
+    "repayment_serious_late": "serious late instalments",
+    "repayment_clean_observed": "clean instalments",
+    "credit_large": "larger loan",
+    "credit_medium": "mid-size loan",
+    "credit_small": "smaller loan",
+    "leverage_over_6x": "loan >6x income",
+    "leverage_3_to_6x": "loan 3-6x income",
+    "leverage_under_3x": "loan <3x income",
+    "burden_under_20pct": "payment <20% income",
+    "burden_20_to_35pct": "payment 20-35% income",
+    "burden_over_35pct": "payment >35% income",
+}
+
+
+def compact_rule_pattern(rule_str: str) -> str:
+    left, right = str(rule_str).split(" -> ", 1)
+    tokens = lambda side: [t.strip() for t in side.strip("{}").split(",") if t.strip()]
+    describe = lambda side: " + ".join(
+        RULE_TOKEN_SHORT.get(t, t.replace("_", " ")) for t in tokens(side)
+    )
+    return f"{describe(left)} → {describe(right)}"
+
+
+def rule_tick_label(row) -> str:
+    pattern_lines = textwrap.wrap(compact_rule_pattern(row["rule_str"]), width=42)[:2]
+    context = CONTEXT_SHORT.get(str(row["Context"]), str(row["Context"]))
+    return (
+        f"<b>R{int(row['rank']):02d} | {context}</b><br>"
+        + "<br>".join(pattern_lines)
+    )
+
+
+rule_plot = business_rules.sort_values(["uplift_pp", "rank"]).copy()
+rule_plot["plot_label"] = rule_plot.apply(rule_tick_label, axis=1)
+
+fig_signal_agreement = go.Figure()
+for row in rule_plot.itertuples(index=False):
+    fig_signal_agreement.add_trace(go.Scatter(
+        x=[row.consequent_baseline, row.confidence],
+        y=[row.plot_label, row.plot_label],
+        mode="lines",
+        line=dict(color="#AFCBD7", width=3),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+
+fig_signal_agreement.add_trace(go.Scatter(
+    x=rule_plot["consequent_baseline"],
+    y=rule_plot["plot_label"],
+    mode="markers",
+    name="Context baseline",
+    marker=dict(color="#CBD5E1", size=10, symbol="circle", line=dict(color="#64748B", width=1)),
+    customdata=rule_plot[[
+        "Context", "context_n", "consequent_baseline", "business_theme", "source_families",
+        "Business pattern",
+    ]].to_numpy(),
+    hovertemplate=(
+        "<b>%{customdata[5]}</b><br>Context: %{customdata[0]}<br>"
+        "Evidence baseline: %{customdata[2]:.2%} of %{customdata[1]:,} applications<br>"
+        "Business meaning: %{customdata[3]}<br>Sources: %{customdata[4]}<extra></extra>"
+    ),
+))
+fig_signal_agreement.add_trace(go.Scatter(
+    x=rule_plot["confidence"],
+    y=rule_plot["plot_label"],
+    mode="markers+text",
+    name="When the condition is present",
+    marker=dict(color="#356A8A", size=12, symbol="diamond", line=dict(color="#FFFFFF", width=1)),
+    text=[f"{value:+.1f} pp" for value in rule_plot["uplift_pp"]],
+    textposition="middle right",
+    cliponaxis=False,
+    customdata=rule_plot[[
+        "Context", "context_n", "condition_count", "support_count", "support",
+        "consequent_baseline", "confidence", "uplift_pp", "lift", "business_theme",
+        "Business pattern",
+    ]].to_numpy(),
+    hovertemplate=(
+        "<b>%{customdata[10]}</b><br>Context: %{customdata[0]} (%{customdata[1]:,} applications)<br>"
+        "Condition and evidence: %{customdata[3]:,} of %{customdata[2]:,} condition-matching applications "
+        "(%{customdata[6]:.2%})<br>Support in the full context: %{customdata[4]:.2%}<br>"
+        "Context baseline: %{customdata[5]:.2%}<br>Difference: %{customdata[7]:+.2f} percentage points<br>"
+        "Association lift: %{customdata[8]:.3f}x<br>Business meaning: %{customdata[9]}<extra></extra>"
+    ),
+))
+fig_signal_agreement.update_xaxes(
+    title="Observed evidence rate",
+    tickformat=".0%",
+    range=[
+        max(0, float(rule_plot["consequent_baseline"].min()) - .05),
+        min(1, float(rule_plot["confidence"].max()) + .16),
+    ],
 )
-fig_rules.update_traces(
-    hovertemplate="<b>Rule %{y}</b><br>%{customdata[0]}<br>Lift %{x:.2f} - support %{customdata[1]:.1%} (%{customdata[3]:,} applications)<br>Confidence %{customdata[2]:.1%}<br>%{customdata[4]}<extra></extra>"
+fig_signal_agreement.update_yaxes(
+    title="",
+    categoryorder="array",
+    categoryarray=rule_plot["plot_label"].tolist(),
+    tickfont=dict(size=11),
 )
-fig_rules.update_xaxes(title="Lift (1.0 means no association)")
-fig_rules.update_yaxes(title="Rule number", autorange="reversed", dtick=1)
-chart_layout(fig_rules, bottom=60)
+chart_layout(fig_signal_agreement, left=265, bottom=58)
+
+
+# One highest-uplift example from each business interpretation theme keeps the
+# executive view focused. The Rules tab retains all shortlisted patterns.
+# Operational reach: how much of each rule's context contains the condition,
+# and how much contains both the condition and its associated evidence.
+rule_workload = business_rules.sort_values(["support", "rank"]).copy()
+rule_workload["context_label"] = rule_workload.apply(rule_tick_label, axis=1)
+fig_rule_workload = go.Figure()
+fig_rule_workload.add_trace(go.Bar(
+    x=rule_workload["condition_share"],
+    y=rule_workload["context_label"],
+    orientation="h",
+    name="Condition present",
+    marker_color="#AFCBD7",
+    text=[
+        f"{count:,} / {context:,}"
+        for count, context in zip(rule_workload["condition_count"], rule_workload["context_n"])
+    ],
+    textposition="outside",
+    customdata=rule_workload[["condition_count", "context_n", "Business pattern"]].to_numpy(),
+    hovertemplate=(
+        "<b>%{customdata[2]}</b><br>Condition present in %{customdata[0]:,} of "
+        "%{customdata[1]:,} applications (%{x:.2%})<extra></extra>"
+    ),
+))
+fig_rule_workload.add_trace(go.Bar(
+    x=rule_workload["support"],
+    y=rule_workload["context_label"],
+    orientation="h",
+    name="Condition and evidence",
+    marker_color="#356A8A",
+    text=[
+        f"{support:,} / {context:,}"
+        for support, context in zip(rule_workload["support_count"], rule_workload["context_n"])
+    ],
+    textposition="outside",
+    customdata=rule_workload[[
+        "support_count", "condition_count", "context_n", "confidence", "Business pattern",
+    ]].to_numpy(),
+    hovertemplate=(
+        "<b>%{customdata[4]}</b><br>Condition and evidence occur together in %{customdata[0]:,} applications.<br>"
+        "That is %{customdata[3]:.2%} of the %{customdata[1]:,} condition-matching applications and "
+        "%{x:.2%} of the %{customdata[2]:,}-application context.<extra></extra>"
+    ),
+))
+fig_rule_workload.update_layout(barmode="group")
+fig_rule_workload.update_xaxes(
+    title="Share of the rule's stated context",
+    tickformat=".0%",
+    range=[0, min(1, float(rule_workload["condition_share"].max()) * 1.34)],
+)
+fig_rule_workload.update_yaxes(
+    title="",
+    categoryorder="array",
+    categoryarray=rule_workload["context_label"].tolist(),
+    tickfont=dict(size=11),
+)
+chart_layout(fig_rule_workload, left=265, bottom=58)
 
 algo_plot = algo_comparison.copy()
 algo_plot["label"] = algo_plot["Algoritma"].replace({
@@ -889,29 +1186,24 @@ fig_algorithms.update_traces(texttemplate="%{y:,}", textposition="outside")
 fig_algorithms.update_xaxes(title=""); fig_algorithms.update_yaxes(title="Rules found")
 chart_layout(fig_algorithms, legend=False, bottom=70)
 
-if "support_records" in rule_segment.columns:
-    fig_rule_segments = px.bar(
-        rule_segment, x="mean_lift", y="Segment", orientation="h", color="Segment",
-        color_discrete_map=SEGMENT_COLORS, custom_data=["mean_confidence", "support_records"],
-    )
-    fig_rule_segments.update_traces(
-        texttemplate="%{x:.2f}x", textposition="outside",
-        hovertemplate="%{y}<br>Average lift %{x:.2f}x<br>Average confidence %{customdata[0]:.1%}<br>Total rule matches %{customdata[1]:,} (may overlap)<extra></extra>",
-    )
-    fig_rule_segments.update_xaxes(title="Average lift of selected rules")
-    fig_rule_segments.update_yaxes(title="")
-    chart_layout(fig_rule_segments, legend=False, left=120)
-else:
-    fig_rule_segments = go.Figure().add_annotation(text="Run Phase 3 again to build this chart", showarrow=False)
-    chart_layout(fig_rule_segments, legend=False)
-
-
 # Anomaly figures
+_total_eval = int(anomaly_summary.Total_Evaluated)
+_targeted_queue = len(anomaly_investigation)
+_route_counts = anomaly_investigation["Queue Route"].value_counts()
+_consensus_route = int(_route_counts.get("Detector consensus", 0))
+_single_axis_route = int(_route_counts.get("Extreme single-axis value", 0))
+_dbscan_queue_corroboration = int(
+    anomaly_investigation["Sampled Density Corroboration"].eq("Assessed (isolated)").sum()
+)
+
 detector_counts = pd.DataFrame({
-    "Detector": ["Adjusted IQR", "Z-score", "Mahalanobis", "Isolation Forest", "LOF", "DBSCAN noise", "Flagged by 3+ methods"],
+    "Detector": [
+        "Adjusted IQR", "Z-score", "Shrinkage Mahalanobis", "Isolation Forest", "LOF",
+        "DBSCAN noise points (30k sample)", "Consensus route", "Single-value route",
+    ],
     "Records": [anomaly_summary.N_IQR, anomaly_summary.N_ZSCORE, anomaly_summary.N_MAHALANOBIS,
-                anomaly_summary.N_ISOFOREST, anomaly_summary.N_LOF, anomaly_summary.N_DBSCAN,
-                anomaly_summary.HIGH_CONFIDENCE],
+                anomaly_summary.N_ISOFOREST, anomaly_summary.N_LOF, anomaly_summary.N_DBSCAN_SAMPLE_NOISE,
+                _consensus_route, _single_axis_route],
 }).sort_values("Records")
 fig_detectors = px.bar(detector_counts, x="Records", y="Detector", orientation="h", color_discrete_sequence=["#64748B"])
 fig_detectors.update_traces(texttemplate="%{x:,}", textposition="outside")
@@ -933,7 +1225,7 @@ fig_drivers = px.bar(
     color_discrete_map=REVIEW_COLORS,
 )
 fig_drivers.update_traces(texttemplate="%{x:,}", textposition="outside")
-fig_drivers.update_xaxes(title="Records flagged by 3+ methods"); fig_drivers.update_yaxes(title="")
+fig_drivers.update_xaxes(title="Applications in the targeted review queue"); fig_drivers.update_yaxes(title="")
 chart_layout(fig_drivers, left=170)
 
 review_long = anomaly_by_segment.reset_index(names="Segment").melt(
@@ -944,38 +1236,31 @@ fig_review_segment = px.bar(
     color_discrete_map=REVIEW_COLORS,
 )
 fig_review_segment.update_yaxes(title="", categoryorder="array", categoryarray=SEGMENT_ORDER[::-1])
-fig_review_segment.update_xaxes(title="Records flagged by 3+ methods")
+fig_review_segment.update_xaxes(title="Applications in the targeted review queue")
 chart_layout(fig_review_segment, left=120)
 
-# Anomaly scope: what kind of unusual a record is, not just how unusual.
+# The two scopes follow the mutually exclusive queue-entry routes. Sampled
+# DBSCAN is reported separately as corroboration and never changes admission.
 SCOPE_LABELS = {
-    "Global / extreme value": "Global",
-    "Contextual / unusual combination": "Contextual",
-    "Collective / density": "Collective",
+    "Portfolio single-axis extreme": "Single-axis source check",
+    "Detector-consensus pattern": "Multi-method pattern review",
 }
-SCOPE_ORDER = ["Global", "Contextual", "Collective"]
-SCOPE_COLORS = {"Global": "#B5534C", "Contextual": "#356A8A", "Collective": "#4F7D65"}
+SCOPE_ORDER = ["Single-axis source check", "Multi-method pattern review"]
+SCOPE_COLORS = {
+    "Single-axis source check": "#B5534C",
+    "Multi-method pattern review": "#356A8A",
+}
 
 # Why each kind of unusual is a different credit problem. These are the review
 # consequences, not restatements of the detector maths.
 SCOPE_MEANING = {
-    "Global": (
-        "A value sits outside the plausible range for the whole portfolio.",
-        "Either the figure was captured wrongly or the file is genuinely extreme. Both matter, because "
-        "affordability tables and cut-offs are calibrated on the bulk of the book and simply do not apply here. "
-        "Confirm the number at source before any assessment continues.",
+    "Single-axis source check": (
+        "One field is at least 10 standard deviations from the portfolio mean.",
+        "Check its source, sign, units, and joins before relying on it.",
     ),
-    "Contextual": (
-        "Every value looks ordinary alone; the combination is unusual for the applicant's peer group.",
-        "This is the hardest kind to catch and the most consequential. No single-field rule fires, so these files "
-        "pass rule-based controls untouched. It takes a multivariate view to see that the pattern does not fit "
-        "applicants who otherwise look the same.",
-    ),
-    "Collective": (
-        "A small group of records share a shape that is rare for the portfolio.",
-        "When records cluster together in a sparse pocket, the cause is usually systemic rather than individual: "
-        "one channel, branch, product, or intake period behaving differently. Investigate the group as a group; "
-        "reviewing the files one at a time hides the common cause.",
+    "Multi-method pattern review": (
+        "At least three of five portfolio-wide methods agree the record is unusual.",
+        "Use the exported values to decide the review type: data check, affordability, or standard.",
     ),
 }
 
@@ -997,7 +1282,7 @@ fig_scope.update_traces(
     texttemplate="%{x:,}", textposition="outside",
     hovertemplate="<b>%{y}</b><br>%{x:,} records (%{customdata[0]:.1%} of the queue)<br><br>%{customdata[1]}<extra></extra>",
 )
-fig_scope.update_xaxes(title="Records flagged by 3+ methods", range=[0, scope_counts.max() * 1.25])
+fig_scope.update_xaxes(title="Applications in the targeted review queue", range=[0, scope_counts.max() * 1.25])
 fig_scope.update_yaxes(title="")
 chart_layout(fig_scope, legend=False, left=90)
 
@@ -1023,7 +1308,7 @@ fig_scope_segment.update_traces(
                   "%{customdata[0]:.0%} of that segment's queue (%{customdata[1]:,} flagged)<extra></extra>",
 )
 fig_scope_segment.update_yaxes(title="", categoryorder="array", categoryarray=SEGMENT_ORDER[::-1])
-fig_scope_segment.update_xaxes(title="Records flagged by 3+ methods")
+fig_scope_segment.update_xaxes(title="Applications in the targeted review queue")
 chart_layout(fig_scope_segment, left=120)
 
 scope_by_review = (
@@ -1038,42 +1323,123 @@ fig_scope_review = px.bar(
     color_discrete_map=REVIEW_COLORS,
 )
 fig_scope_review.update_traces(
-    hovertemplate="<b>%{y} anomaly</b><br>%{fullData.name}: %{x:,} records<extra></extra>",
+    hovertemplate="<b>%{y} review pattern</b><br>%{fullData.name}: %{x:,} records<extra></extra>",
 )
 fig_scope_review.update_yaxes(title="", categoryorder="array", categoryarray=SCOPE_ORDER[::-1])
-fig_scope_review.update_xaxes(title="Records flagged by 3+ methods")
+fig_scope_review.update_xaxes(title="Applications in the targeted review queue")
 chart_layout(fig_scope_review, left=90)
 
-
-# How 356,255 applications narrow to a queue a credit team can actually staff.
-_total_eval = int(anomaly_summary.Total_Evaluated)
-_high = int(anomaly_summary.HIGH_CONFIDENCE)
-_moderate = int(anomaly_summary.MODERATE)
-_weak = int(anomaly_summary.WEAK)
-funnel_stages = pd.DataFrame({
-    "Stage": [
-        "All applications",
-        "Flagged by at least one method",
-        "Flagged by at least two",
-        "Consensus queue (three or more)",
-    ],
-    "Records": [
-        _total_eval,
-        _weak + _moderate + _high,
-        _moderate + _high,
-        _high,
-    ],
+# The standard outlier typology. Point outranks the sampled density label
+# because a >=10 SD single value needs no context to be anomalous.
+TYPOLOGY_LABELS = {
+    "Point (globally extreme single value)": "Point",
+    "Contextual (unusual multivariate combination)": "Contextual",
+    "Collective (sampled sparse-density group)": "Collective",
+}
+TYPOLOGY_ORDER = ["Point", "Contextual", "Collective"]
+TYPOLOGY_COLORS = {"Point": "#B5534C", "Contextual": "#356A8A", "Collective": "#4F7D65"}
+TYPOLOGY_MEANING = {
+    "Point": "One prepared value is at least 10 standard deviations from the portfolio mean; no context is needed to see it. Check the field's source first.",
+    "Contextual": "Every individual value is plausible; only the combination is unusual under multi-method agreement. Read the record evidence to find the conflicting sources.",
+    "Collective": "No globally extreme value, but the record sits in a sparse micro-group isolated by the sampled density view. Verify the shared pattern before reviewing members.",
+}
+typology_series = anomaly_investigation["Outlier Type"].map(TYPOLOGY_LABELS)
+anomaly_investigation["Outlier Type Short"] = typology_series
+typology_counts = typology_series.value_counts().reindex(TYPOLOGY_ORDER).fillna(0).astype(int)
+typology_frame = pd.DataFrame({
+    "Outlier type": TYPOLOGY_ORDER,
+    "Records": typology_counts.to_numpy(),
+    "Share": (typology_counts / typology_counts.sum()).to_numpy(),
+    "Meaning": [TYPOLOGY_MEANING[t] for t in TYPOLOGY_ORDER],
 })
-fig_anomaly_funnel = go.Figure(go.Funnel(
-    y=funnel_stages["Stage"],
-    x=funnel_stages["Records"],
-    textposition="inside",
+fig_typology = px.bar(
+    typology_frame.iloc[::-1], x="Records", y="Outlier type", orientation="h",
+    color="Outlier type", color_discrete_map=TYPOLOGY_COLORS,
+    custom_data=["Share", "Meaning"],
+)
+fig_typology.update_traces(
+    texttemplate="%{x:,}", textposition="outside",
+    hovertemplate="<b>%{y} outlier</b><br>%{x:,} records (%{customdata[0]:.1%} of the queue)<br><br>%{customdata[1]}<extra></extra>",
+)
+fig_typology.update_xaxes(
+    title="Applications in the targeted review queue",
+    range=[0, typology_counts.max() * 1.25],
+)
+fig_typology.update_yaxes(title="")
+chart_layout(fig_typology, legend=False, left=90)
+
+
+queue_routes = pd.DataFrame({
+    "Queue route": ["Detector consensus", "Extreme single-axis value"],
+    "Applications": [_consensus_route, _single_axis_route],
+})
+fig_queue_routes = px.bar(
+    queue_routes.sort_values("Applications"),
+    x="Applications",
+    y="Queue route",
+    orientation="h",
+    color="Queue route",
+    color_discrete_map={
+        "Detector consensus": "#356A8A",
+        "Extreme single-axis value": "#B98535",
+    },
+)
+fig_queue_routes.update_traces(
     texttemplate="%{x:,}",
-    marker=dict(color=["#CBD5E1", "#9DB3BF", "#5C87A0", "#B5534C"]),
-    hovertemplate="<b>%{y}</b><br>%{x:,} applications<br>%{percentInitial} of the portfolio<extra></extra>",
-    connector=dict(line=dict(color="#E4E9EC")),
+    textposition="outside",
+    hovertemplate="<b>%{y}</b><br>%{x:,} applications<extra></extra>",
+)
+fig_queue_routes.update_xaxes(
+    title=f"Applications in the {_targeted_queue:,}-file queue",
+    range=[0, queue_routes["Applications"].max() * 1.22],
+)
+fig_queue_routes.update_yaxes(title="")
+chart_layout(fig_queue_routes, legend=False, left=165)
+
+consensus_levels = [2, 3, 4]
+single_axis_levels = [8.0, 10.0, 12.0]
+sensitivity_share = queue_sensitivity.pivot(
+    index="consensus_at_least", columns="single_axis_z_cutoff", values="queue_share"
+).reindex(index=consensus_levels, columns=single_axis_levels)
+sensitivity_total = queue_sensitivity.pivot(
+    index="consensus_at_least", columns="single_axis_z_cutoff", values="total_queue"
+).reindex(index=consensus_levels, columns=single_axis_levels)
+sensitivity_text = np.empty(sensitivity_total.shape, dtype=object)
+for row_index, consensus_level in enumerate(consensus_levels):
+    for column_index, z_cutoff in enumerate(single_axis_levels):
+        selected = consensus_level == 3 and z_cutoff == 10
+        sensitivity_text[row_index, column_index] = (
+            f"{int(sensitivity_total.iloc[row_index, column_index]):,}<br>"
+            f"{sensitivity_share.iloc[row_index, column_index]:.2%}"
+            + ("<br><b>Selected</b>" if selected else "")
+        )
+fig_queue_sensitivity = go.Figure(go.Heatmap(
+    z=sensitivity_share.values,
+    x=single_axis_levels,
+    y=consensus_levels,
+    text=sensitivity_text,
+    texttemplate="%{text}",
+    colorscale=[[0, "#EEF3F5"], [1, "#356A8A"]],
+    colorbar=dict(title="Queue share", tickformat=".1%", thickness=14),
+    customdata=sensitivity_total.values,
+    hovertemplate=(
+        "Consensus at least %{y} of 5<br>Single-axis cutoff %{x:.0f} SD<br>"
+        "%{customdata:,} applications (%{z:.2%})<extra></extra>"
+    ),
 ))
-chart_layout(fig_anomaly_funnel, legend=False, left=210)
+fig_queue_sensitivity.add_shape(
+    type="rect", x0=9, x1=11, y0=2.5, y1=3.5,
+    line=dict(color="#B98535", width=3), fillcolor="rgba(0,0,0,0)",
+)
+fig_queue_sensitivity.update_xaxes(
+    title="Single-axis source-check cutoff (standard deviations)",
+    tickmode="array", tickvals=single_axis_levels,
+)
+fig_queue_sensitivity.update_yaxes(
+    title="Minimum detector agreement", tickmode="array", tickvals=consensus_levels,
+    ticktext=["At least 2 of 5", "At least 3 of 5", "At least 4 of 5"],
+)
+chart_layout(fig_queue_sensitivity, legend=False, left=105, bottom=62)
 
 
 def scope_explainer() -> html.Div:
@@ -1091,15 +1457,15 @@ def scope_explainer() -> html.Div:
     ], className="scope-grid")
 
 anomaly_plot = anomaly_pca.copy()
-high = anomaly_plot[anomaly_plot["anomaly_category"].eq("HIGH_CONFIDENCE_ANOMALY")]
+high = anomaly_plot[anomaly_plot["anomaly_category"].eq("TARGETED_REVIEW")]
 other = anomaly_plot[~anomaly_plot.index.isin(high.index)]
 other = stratified_sample(other, "anomaly_category", max(1, 12_000 - len(high)))
 anomaly_plot = pd.concat([other, high], ignore_index=True)
 anomaly_plot["Review status"] = anomaly_plot["anomaly_category"].map({
-    "NORMAL": "Typical record",
-    "WEAK_SIGNAL": "One detector flag",
-    "MODERATE_ANOMALY": "Multiple detector flags",
-    "HIGH_CONFIDENCE_ANOMALY": "Flagged by 3+ methods",
+    "NO_DETECTOR_FLAG": "No detector flag",
+    "ONE_DETECTOR_SIGNAL": "One detector flag",
+    "TWO_DETECTOR_SIGNAL": "Two detector signals",
+    "TARGETED_REVIEW": "Targeted review queue",
 })
 fig_anomaly_pca = px.scatter(
     anomaly_plot, x="PC1", y="PC2", color="Review status",
@@ -1108,76 +1474,6 @@ fig_anomaly_pca = px.scatter(
 )
 fig_anomaly_pca.update_traces(marker=dict(size=4), hovertemplate="%{fullData.name}<br>PC1 %{x:.2f} - PC2 %{y:.2f}<extra></extra>")
 chart_layout(fig_anomaly_pca, bottom=60)
-
-
-# Outcome figures
-rates = cluster_rates.set_index("Segment").reindex(SEGMENT_ORDER).reset_index()
-fig_rates = px.bar(
-    rates, x="default_rate", y="Segment", orientation="h", color="descriptive_risk_flag",
-    color_discrete_map={True: "#B5534C", False: "#356A8A"},
-    custom_data=["train_applicants", "defaults", "lift_vs_portfolio"],
-)
-fig_rates.add_vline(
-    x=metric("observed_default_rate"), line_dash="dash", line_color="#203746",
-    annotation_text=f"Training average: {fmt_pct(metric('observed_default_rate'))}",
-)
-fig_rates.update_traces(
-    texttemplate="%{x:.1%}", textposition="outside",
-    hovertemplate="<b>%{y}</b><br>Default rate %{x:.2%}<br>%{customdata[1]:,} defaults among %{customdata[0]:,} labeled training records<br>%{customdata[2]:.2f}x the training-set average<extra></extra>",
-)
-fig_rates.update_xaxes(title="Observed default rate (training data)", tickformat=".0%", range=[0, rates.default_rate.max() * 1.28])
-fig_rates.update_yaxes(title="")
-chart_layout(fig_rates, legend=False, left=120)
-
-cm = backtest_cm.set_index("actual")[["Flag non-default", "Flag default"]]
-fig_cm = go.Figure(go.Heatmap(
-    z=cm.values, x=["Not flagged by cluster", "Flagged by cluster"], y=["TARGET = 0", "TARGET = 1"],
-    colorscale="Blues", text=cm.values, texttemplate="%{text:,}", showscale=False,
-    hovertemplate="%{y} / %{x}<br>%{z:,} labeled training applications<extra></extra>",
-))
-chart_layout(fig_cm, left=120, bottom=65)
-
-fig_policy = go.Figure()
-for col, label, color in [
-    ("precision", "Precision", "#B5534C"),
-    ("recall", "Recall", "#356A8A"),
-    ("flagged_share", "Share sent to review", "#B98535"),
-]:
-    fig_policy.add_trace(go.Scatter(
-        x=policy_sweep["threshold_uplift"], y=policy_sweep[col], mode="lines+markers",
-        name=label, line=dict(color=color, width=3),
-        hovertemplate=f"{label}: %{{y:.1%}}<br>Cutoff: %{{x:.2f}}x the training baseline<extra></extra>",
-    ))
-fig_policy.add_vline(x=1.10, line_dash="dash", line_color="#203746", annotation_text="Dashboard setting: 1.10x")
-fig_policy.update_xaxes(title="Required cluster rate vs. training baseline")
-fig_policy.update_yaxes(title="Share of labeled training records", tickformat=".0%", range=[0, 1])
-chart_layout(fig_policy)
-
-if not outcome_comparison.empty:
-    metric_labels = {
-        "precision": "Precision", "recall": "Recall", "average_precision": "Average precision",
-        "roc_auc": "ROC AUC", "lift_vs_baseline": "Lift over training average",
-    }
-    comparison_plot = outcome_comparison.copy()
-    comparison_plot["Metric"] = comparison_plot["metric"].map(metric_labels)
-    comparison_plot["method"] = comparison_plot["method"].replace({
-        "Cluster outcome alignment": "Cluster-based flag",
-        "Supervised logistic diagnostic": "Logistic model check",
-    })
-    fig_objective = px.bar(
-        comparison_plot, x="Metric", y="value", color="method", barmode="group",
-        color_discrete_map={
-            "Cluster-based flag": "#64748B",
-            "Logistic model check": "#4F7D65",
-        },
-    )
-    fig_objective.update_traces(texttemplate="%{y:.2f}", textposition="outside")
-    fig_objective.update_yaxes(title="Metric value", rangemode="tozero")
-    fig_objective.update_xaxes(title="")
-    chart_layout(fig_objective, bottom=80)
-else:
-    fig_objective = go.Figure().add_annotation(text="Run Phase 4 again to build the logistic comparison", showarrow=False)
-    chart_layout(fig_objective, legend=False)
 
 
 TABLE_BASE = {
@@ -1194,36 +1490,83 @@ TABLE_BASE = {
 }
 
 
+rule_table_view = business_rules.copy()
+rule_table_view["Context and denominator"] = rule_table_view.apply(
+    lambda row: f"{row['Context']}\n{int(row['context_n']):,} applications",
+    axis=1,
+)
+rule_table_view["Observed together"] = rule_table_view.apply(
+    lambda row: (
+        f"{int(row['support_count']):,} of {int(row['condition_count']):,} condition-matching applications "
+        f"({row['confidence']:.1%})"
+    ),
+    axis=1,
+)
+rule_table_view["Association compared with context"] = rule_table_view.apply(
+    lambda row: (
+        f"{row['consequent_baseline']:.1%} baseline to {row['confidence']:.1%} with the condition "
+        f"({row['uplift_pp']:+.1f} pp; {row['lift']:.2f}x lift)"
+    ),
+    axis=1,
+)
+RULE_TABLE_COLUMNS = [
+    "rank", "Business pattern", "Context and denominator", "source_families", "Observed together",
+    "Association compared with context", "why_it_matters", "review_action", "caveat",
+]
+RULE_TABLE_LABELS = {
+    "rank": "#",
+    "Business pattern": "Business pattern",
+    "Context and denominator": "Context and denominator",
+    "source_families": "Sources to check together",
+    "Observed together": "Observed together",
+    "Association compared with context": "Association vs. context",
+    "why_it_matters": "Why it matters",
+    "review_action": "Reviewer action",
+    "caveat": "Use boundary",
+}
+RULE_TABLE_STYLE = {
+    **TABLE_BASE,
+    "style_cell": {
+        **TABLE_BASE["style_cell"],
+        "whiteSpace": "normal",
+        "height": "auto",
+        "minWidth": "150px",
+        "maxWidth": "320px",
+        "lineHeight": "1.45",
+        "verticalAlign": "top",
+    },
+}
 rules_table = dash_table.DataTable(
-    data=rule_view[["rank", "Segment", "short_rule", "support", "confidence", "lift", "metric_scope"]].to_dict("records"),
-    columns=[
-        {"name": "#", "id": "rank"}, {"name": "Segment", "id": "Segment"},
-        {"name": "Condition pair", "id": "short_rule"},
-        {"name": "Support", "id": "support", "type": "numeric", "format": Format(precision=1, scheme=Scheme.percentage)},
-        {"name": "Confidence", "id": "confidence", "type": "numeric", "format": Format(precision=1, scheme=Scheme.percentage)},
-        {"name": "Lift", "id": "lift", "type": "numeric", "format": Format(precision=2, scheme=Scheme.fixed)},
-        {"name": "Scope", "id": "metric_scope"},
-    ],
-    page_size=8,
+    data=rule_table_view[RULE_TABLE_COLUMNS].to_dict("records"),
+    columns=[{"name": RULE_TABLE_LABELS[column], "id": column} for column in RULE_TABLE_COLUMNS],
+    page_size=6,
     sort_action="native",
     filter_action="native",
     tooltip_data=[
         {column: {"value": str(value), "type": "markdown"} for column, value in row.items()}
-        for row in rule_view[["rank", "Segment", "short_rule", "support", "confidence", "lift", "metric_scope"]].to_dict("records")
+        for row in rule_table_view[RULE_TABLE_COLUMNS].to_dict("records")
     ],
     tooltip_duration=None,
-    **TABLE_BASE,
+    style_cell_conditional=[
+        {"if": {"column_id": "rank"}, "minWidth": "44px", "width": "44px", "maxWidth": "44px"},
+        {"if": {"column_id": "Business pattern"}, "minWidth": "260px"},
+        {"if": {"column_id": "review_action"}, "minWidth": "300px"},
+        {"if": {"column_id": "caveat"}, "minWidth": "300px"},
+    ],
+    **RULE_TABLE_STYLE,
 )
 
 
-ANOMALY_TABLE_COLUMNS = ["SK_ID_CURR", "Segment", "Review Type", "Priority", "Primary Driver", "Detected By"]
+ANOMALY_TABLE_COLUMNS = [
+    "SK_ID_CURR", "Segment", "Outlier Type Short", "Review Type", "Priority", "Primary Driver",
+]
 ANOMALY_TABLE_LABELS = {
-    "SK_ID_CURR": "Applicant ID",
-    "Segment": "Cluster",
+    "SK_ID_CURR": "Application ID",
+    "Segment": "Business segment",
+    "Outlier Type Short": "Outlier type",
     "Review Type": "Review type",
     "Priority": "Priority",
     "Primary Driver": "Main reason",
-    "Detected By": "Methods",
 }
 
 
@@ -1248,185 +1591,287 @@ def anomaly_table_component() -> dash_table.DataTable:
         filter_query="",
         cell_selectable=True,
         style_data_conditional=[
-            {"if": {"filter_query": '{Review Type} = "Data quality check"', "column_id": "Review Type"},
+            {"if": {"filter_query": '{Review Type} = "Source reconciliation"', "column_id": "Review Type"},
              "backgroundColor": "#FFF3DA", "fontWeight": "700"},
             {"if": {"filter_query": '{Review Type} = "Affordability and repayment review"', "column_id": "Review Type"},
              "backgroundColor": "#FBE9E7", "fontWeight": "700"},
+            {"if": {"filter_query": '{Outlier Type Short} = "Point"', "column_id": "Outlier Type Short"},
+             "color": "#B5534C", "fontWeight": "700"},
+            {"if": {"filter_query": '{Outlier Type Short} = "Contextual"', "column_id": "Outlier Type Short"},
+             "color": "#356A8A", "fontWeight": "700"},
+            {"if": {"filter_query": '{Outlier Type Short} = "Collective"', "column_id": "Outlier Type Short"},
+             "color": "#4F7D65", "fontWeight": "700"},
             {"if": {"state": "active"}, "backgroundColor": "#DCEBF2", "border": "1px solid #356A8A"},
         ],
         **TABLE_BASE,
     )
 
 
-# Where the money actually is.
-#
-# Default RATE answers "how often does this cohort fail?". It does not answer
-# "how much does failure cost?", and for a lender those are different questions
-# with different answers. A segment borrowing three times as much per loan can
-# default less often and still dominate losses. Credit at risk multiplies
-# observed defaults by the segment's median loan, which is a rough but honest
-# first-order view of exposure to loss.
-loss_view = rates.merge(
-    cluster_business[["Segment", "median_credit", "median_card_utilisation", "applicants"]],
-    on="Segment", how="left",
+# The landing page is a synthesis layer. Every chart answers a business
+# question by combining compact outputs across phases; none is a raw notebook
+# diagnostic.
+business_view = cluster_business.merge(
+    segment_credit_concentration,
+    on=["CLUSTER_KMEANS", "Segment"],
+    how="inner",
+    validate="one_to_one",
 )
-loss_view["share_of_book"] = loss_view["train_applicants"] / loss_view["train_applicants"].sum()
-loss_view["share_of_defaults"] = loss_view["defaults"] / loss_view["defaults"].sum()
-loss_view["credit_at_risk"] = loss_view["defaults"] * loss_view["median_credit"]
-loss_view["share_of_credit_at_risk"] = loss_view["credit_at_risk"] / loss_view["credit_at_risk"].sum()
-loss_view["exposure"] = loss_view["applicants"] * loss_view["median_credit"]
-loss_view["share_of_exposure"] = loss_view["exposure"] / loss_view["exposure"].sum()
-loss_view = loss_view.sort_values("share_of_credit_at_risk", ascending=False)
-
-
-def _loss_row(segment: str, column: str) -> float:
-    match = loss_view.loc[loss_view["Segment"].eq(segment), column]
-    return float(match.iloc[0]) if len(match) else float("nan")
-
-
-TOP_MONEY_SEGMENT = loss_view.iloc[0]["Segment"]
-WORST_RATE_SEGMENT = loss_view.sort_values("default_rate", ascending=False).iloc[0]["Segment"]
-CARD_SEGMENT = next(
-    (name for name in loss_view["Segment"] if "Card" in str(name)),
-    loss_view.iloc[1]["Segment"],
+business_view["review_count"] = (
+    business_view["Segment"].map(anomaly_by_segment.sum(axis=1)).fillna(0).astype(int)
 )
-THIN_SEGMENT = next(
-    (name for name in loss_view["Segment"] if "Thin" in str(name)),
-    loss_view.iloc[-1]["Segment"],
-)
+business_view["portfolio_share"] = business_view["applicants"] / business_view["applicants"].sum()
+business_view["review_share"] = business_view["review_count"] / business_view["review_count"].sum()
 
-concentration_long = loss_view.melt(
-    id_vars="Segment",
-    value_vars=["share_of_book", "share_of_defaults", "share_of_credit_at_risk"],
-    var_name="Measure", value_name="Share",
-)
-concentration_long["Measure"] = concentration_long["Measure"].map({
-    "share_of_book": "Share of applicants",
-    "share_of_defaults": "Share of defaults",
-    "share_of_credit_at_risk": "Share of money at risk",
+
+# Finding 1: two history-heavy profiles create most of the specialist queue.
+FOCUS_SEGMENTS = ["Repayment-Stress History", "Historical Card-Use Intensity"]
+focus_view = business_view.loc[business_view["Segment"].isin(FOCUS_SEGMENTS)]
+focus_portfolio_share = float(focus_view["portfolio_share"].sum())
+focus_review_share = float(focus_view["review_share"].sum())
+focus_queue_count = int(focus_view["review_count"].sum())
+
+attention_summary = pd.DataFrame({
+    "Denominator": ["All applications", "Targeted review queue"],
+    "Focus profiles": [focus_portfolio_share, focus_review_share],
 })
-fig_loss_concentration = px.bar(
-    concentration_long, x="Share", y="Segment", color="Measure", orientation="h",
-    barmode="group",
+attention_summary["Other three profiles"] = 1 - attention_summary["Focus profiles"]
+attention_long = attention_summary.melt(
+    id_vars="Denominator", var_name="Profile group", value_name="Share"
+)
+attention_long["Profile group"] = attention_long["Profile group"].replace({
+    "Focus profiles": "Repayment-Stress History + Historical Card-Use Intensity",
+})
+fig_attention_concentration = px.bar(
+    attention_long,
+    x="Share",
+    y="Denominator",
+    color="Profile group",
+    orientation="h",
+    barmode="stack",
+    text="Share",
     color_discrete_map={
-        "Share of applicants": "#CBD5E1",
-        "Share of defaults": "#5C87A0",
-        "Share of money at risk": "#B5534C",
+        "Repayment-Stress History + Historical Card-Use Intensity": "#B98535",
+        "Other three profiles": "#CBD5E1",
     },
-    category_orders={"Segment": loss_view["Segment"].tolist()[::-1]},
+    category_orders={"Denominator": ["Targeted review queue", "All applications"]},
 )
-fig_loss_concentration.update_traces(
-    hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{x:.1%}<extra></extra>",
+fig_attention_concentration.update_traces(
+    texttemplate="%{x:.1%}",
+    textposition="inside",
+    insidetextanchor="middle",
+    hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{x:.2%}<extra></extra>",
 )
-fig_loss_concentration.update_xaxes(title="Share of the labelled portfolio", tickformat=".0%")
-fig_loss_concentration.update_yaxes(title="")
-chart_layout(fig_loss_concentration, left=125)
+fig_attention_concentration.update_xaxes(
+    title="Share within each denominator", tickformat=".0%", range=[0, 1]
+)
+fig_attention_concentration.update_yaxes(title="")
+chart_layout(fig_attention_concentration, left=165)
 
-# How often a group fails, against how much its failures cost. A group can sit
-# far left (rarely fails) and still sit high (costs the most), which is the whole
-# argument of finding 01 in a single picture.
-fig_risk_quadrant = px.scatter(
-    loss_view, x="default_rate", y="share_of_credit_at_risk",
-    size="train_applicants", color="Segment",
-    color_discrete_map=SEGMENT_COLORS, size_max=58,
-    custom_data=["Segment", "train_applicants", "median_credit", "share_of_book"],
-)
-fig_risk_quadrant.add_vline(
-    x=float(metric("observed_default_rate")), line_dash="dot", line_color="#91A0A8",
-    annotation_text="book average", annotation_position="top",
-)
-fig_risk_quadrant.update_traces(
-    hovertemplate="<b>%{customdata[0]}</b><br>Falls behind %{x:.2%} of the time<br>"
-                  "Holds %{y:.1%} of money at risk<br>%{customdata[1]:,} customers "
-                  "(%{customdata[3]:.1%} of the book)<br>Typical loan %{customdata[2]:,.0f}<extra></extra>",
-)
-fig_risk_quadrant.update_xaxes(title="How often the group falls behind", tickformat=".1%")
-fig_risk_quadrant.update_yaxes(title="Share of money at risk", tickformat=".0%")
-chart_layout(fig_risk_quadrant, left=60)
 
-# Over-representation: share of failures divided by share of customers. Above 1
-# means the group produces more trouble than its size would predict.
-loss_view["over_index"] = loss_view["share_of_defaults"] / loss_view["share_of_book"]
-over_plot = loss_view.sort_values("over_index")
-fig_overrepresentation = px.bar(
-    over_plot, x="over_index", y="Segment", orientation="h",
-    color="Segment", color_discrete_map=SEGMENT_COLORS,
-    custom_data=["share_of_book", "share_of_defaults"],
+# Finding 2: show nominal amount concentration directly instead of asking the
+# reader to infer it from a bubble chart.
+larger_loan_row = require_one(
+    business_view,
+    business_view["Segment"].eq("Larger-Loan Affordability"),
+    "Larger-Loan Affordability segment",
 )
-fig_overrepresentation.add_vline(x=1.0, line_dash="dot", line_color="#16232B")
-fig_overrepresentation.update_traces(
-    texttemplate="%{x:.2f}x", textposition="outside",
-    hovertemplate="<b>%{y}</b><br>%{customdata[0]:.1%} of customers produce "
-                  "%{customdata[1]:.1%} of the trouble<br>Index %{x:.2f}x<extra></extra>",
-)
-fig_overrepresentation.update_xaxes(
-    title="Share of customers who fall behind, divided by share of customers",
-    range=[0, over_plot.over_index.max() * 1.25],
-)
-fig_overrepresentation.update_yaxes(title="")
-chart_layout(fig_overrepresentation, legend=False, left=125)
-
-# Pareto of money at risk. Makes the size of each prize obvious: the group that
-# fails most often is the last sliver on the right.
-pareto = loss_view.sort_values("share_of_credit_at_risk", ascending=False).copy()
-pareto["cumulative"] = pareto["share_of_credit_at_risk"].cumsum()
-fig_money_pareto = go.Figure()
-fig_money_pareto.add_trace(go.Bar(
-    x=pareto["Segment"], y=pareto["share_of_credit_at_risk"],
-    marker_color=[SEGMENT_COLORS.get(s, "#64748B") for s in pareto["Segment"]],
-    name="Share of money at risk",
-    customdata=np.stack([pareto["default_rate"], pareto["train_applicants"]], axis=-1),
-    hovertemplate="<b>%{x}</b><br>Holds %{y:.1%} of money at risk<br>"
-                  "Falls behind %{customdata[0]:.2%} of the time<br>"
-                  "%{customdata[1]:,} customers<extra></extra>",
-))
-fig_money_pareto.add_trace(go.Scatter(
-    x=pareto["Segment"], y=pareto["cumulative"], name="Running total",
-    mode="lines+markers", line=dict(color="#16232B", width=2), marker=dict(size=7),
-    hovertemplate="Top groups to here hold %{y:.1%} of money at risk<extra></extra>",
-))
-fig_money_pareto.update_yaxes(title="Share of money at risk", tickformat=".0%")
-fig_money_pareto.update_xaxes(title="", tickangle=-18)
-chart_layout(fig_money_pareto, left=58, bottom=88)
-
-# What a segment average hides. Even the worst group is mostly people who paid.
-mix = loss_view.copy()
-mix["Kept paying"] = mix["train_applicants"] - mix["defaults"]
-mix["Fell behind"] = mix["defaults"]
-mix_long = mix.melt(
-    id_vars=["Segment", "train_applicants"],
-    value_vars=["Kept paying", "Fell behind"],
-    var_name="Outcome", value_name="Customers",
-)
-mix_long["Share"] = mix_long["Customers"] / mix_long["train_applicants"]
-fig_outcome_mix = px.bar(
-    mix_long, x="Share", y="Segment", color="Outcome", orientation="h",
-    color_discrete_map={"Kept paying": "#9DB3BF", "Fell behind": "#B5534C"},
-    category_orders={
-        "Segment": loss_view.sort_values("default_rate")["Segment"].tolist(),
-        "Outcome": ["Kept paying", "Fell behind"],
+amount_concentration = pd.DataFrame({
+    "Measure": [
+        "Share of applications",
+        "Share of recorded loan amounts",
+        "Share of scheduled payment amounts",
+    ],
+    "Share": [
+        larger_loan_row["portfolio_share"],
+        larger_loan_row["credit_amount_share"],
+        larger_loan_row["annuity_amount_share"],
+    ],
+    "Scope": [
+        f"{int(larger_loan_row['applicants']):,} of {COMBINED_APPLICATIONS:,} applications",
+        "This segment's recorded loan amounts over the portfolio total",
+        "This segment's scheduled payment amounts over the portfolio total",
+    ],
+})
+amount_concentration["Plot label"] = amount_concentration["Measure"].map({
+    "Share of applications": "Applications",
+    "Share of recorded loan amounts": "Recorded<br>loan amounts",
+    "Share of scheduled payment amounts": "Scheduled<br>payments",
+})
+fig_amount_concentration = px.bar(
+    amount_concentration,
+    x="Share",
+    y="Plot label",
+    orientation="h",
+    text="Share",
+    custom_data=["Measure", "Scope"],
+    color="Measure",
+    color_discrete_map={
+        "Share of applications": "#CBD5E1",
+        "Share of recorded loan amounts": "#356A8A",
+        "Share of scheduled payment amounts": "#82A9BB",
     },
-    custom_data=["Customers"],
 )
-fig_outcome_mix.update_traces(
-    hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{customdata[0]:,} customers (%{x:.1%})<extra></extra>",
+fig_amount_concentration.update_traces(
+    texttemplate="%{x:.1%}",
+    textposition="outside",
+    cliponaxis=False,
+    hovertemplate="<b>%{customdata[0]}</b><br>%{x:.2%}<br>%{customdata[1]}<extra></extra>",
 )
-fig_outcome_mix.update_xaxes(title="Share of the group", tickformat=".0%")
-fig_outcome_mix.update_yaxes(title="")
-chart_layout(fig_outcome_mix, left=125)
+fig_amount_concentration.update_xaxes(
+    title="Share of the whole portfolio", tickformat=".0%", range=[0, .65]
+)
+fig_amount_concentration.update_yaxes(title="", categoryorder="array", categoryarray=[
+    "Scheduled<br>payments", "Recorded<br>loan amounts", "Applications",
+])
+chart_layout(fig_amount_concentration, legend=False, left=120)
 
 
-def finding(number: str, headline: str, detail: str, action: str | None = None) -> html.Div:
-    """One numbered finding: what the business is seeing, then what to do about it."""
+# 04. Rule-method audit. The business association view is built above directly
+# from business_rules_final.csv; this funnel stays in the Rules tab.
+fig_rule_screening = go.Figure(go.Funnel(
+    y=[wrap_segment_name(stage, width=24) for stage in rule_screening["stage"]],
+    x=rule_screening["remaining_rules"],
+    textposition="inside",
+    texttemplate="%{x:,}",
+    marker=dict(color=["#CBD5E1", "#AFCBD7", "#82A9BB", "#5C87A0", "#356A8A"]),
+    customdata=rule_screening[["removed_at_stage", "business_reason"]].to_numpy(),
+    hovertemplate=(
+        "<b>%{y}</b><br>%{x:,} rules remain<br>Removed at this step: %{customdata[0]:,}<br>"
+        "%{customdata[1]}<extra></extra>"
+    ),
+    connector=dict(line=dict(color="#E4E9EC")),
+))
+chart_layout(fig_rule_screening, legend=False, left=180)
+
+
+# Finding 3: two corroborating cross-source associations. These are review
+# prompts from the portfolio itself; no outcome information exists in them.
+prior_lateness_rule = require_one(
+    business_rules,
+    business_rules["pattern_key"].eq("previous_refusals_repeated | repayment_some_late"),
+    "prior-refusal and late-instalment association",
+)
+bureau_score_rule = require_one(
+    business_rules,
+    business_rules["pattern_key"].eq("bureau_debt_high | external_score_weak"),
+    "bureau-debt and external-score association",
+)
+# Finding 2 corroboration: high leverage with a clean observed repayment record
+# still goes together with a history of earlier approvals, so earlier outcomes
+# do not settle whether the present amount is affordable.
+leverage_approval_rule = require_one(
+    business_rules,
+    business_rules["pattern_key"].eq(
+        "leverage_over_6x | previous_approval_high | repayment_clean_observed"
+    ),
+    "leverage, clean-repayment and prior-approval association",
+)
+
+# Finding 1 corroboration: the source-profile geometry that separates the two
+# specialist segments, read from the standardized business-dimension view.
+def dimension_sd(segment: str, dimension: str) -> float:
+    match = cluster_comparison.loc[
+        cluster_comparison["Segment"].eq(segment)
+        & cluster_comparison["business_dimension"].eq(dimension),
+        "portfolio_sd",
+    ]
+    if len(match) != 1:
+        raise ValueError(f"Expected one comparison value for {segment} / {dimension}.")
+    return float(match.iloc[0])
+association_examples = pd.DataFrame([
+    {
+        "Pattern": "≥3 prior refusals<br>+ late instalments",
+        **prior_lateness_rule.to_dict(),
+    },
+    {
+        "Pattern": "Lower-Intensity<br>Credit Footprint:<br>high debt + weak score",
+        **bureau_score_rule.to_dict(),
+    },
+])
+fig_converging_evidence = go.Figure()
+fig_converging_evidence.add_trace(go.Bar(
+    x=association_examples["consequent_baseline"],
+    y=association_examples["Pattern"],
+    orientation="h",
+    name="Context baseline",
+    marker_color="#CBD5E1",
+    text=[f"{value:.1%}" for value in association_examples["consequent_baseline"]],
+    textposition="inside",
+    insidetextanchor="middle",
+    textfont=dict(color="#203746"),
+    customdata=association_examples[["Context", "context_n"]].to_numpy(),
+    hovertemplate=(
+        "<b>%{y}</b><br>Context baseline: %{x:.2%}<br>"
+        "Context: %{customdata[0]} (%{customdata[1]:,} applications)<extra></extra>"
+    ),
+))
+fig_converging_evidence.add_trace(go.Bar(
+    x=association_examples["confidence"],
+    y=association_examples["Pattern"],
+    orientation="h",
+    name="Condition present",
+    marker_color="#356A8A",
+    text=[
+        f"{rate:.1%}<br>+{uplift:.1f} pp"
+        for rate, uplift in zip(association_examples["confidence"], association_examples["uplift_pp"])
+    ],
+    textposition="inside",
+    insidetextanchor="middle",
+    textfont=dict(color="#FFFFFF"),
+    customdata=association_examples[[
+        "condition_count", "support_count", "source_families", "review_action",
+    ]].to_numpy(),
+    hovertemplate=(
+        "<b>%{y}</b><br>Condition present: %{x:.2%}<br>"
+        "%{customdata[1]:,} of %{customdata[0]:,} condition-matching applications<br>"
+        "Sources: %{customdata[2]}<br>Review: %{customdata[3]}<extra></extra>"
+    ),
+))
+fig_converging_evidence.update_layout(barmode="group")
+fig_converging_evidence.update_xaxes(
+    title="Associated-evidence rate", tickformat=".0%", range=[0, .72]
+)
+fig_converging_evidence.update_yaxes(
+    title="",
+    categoryorder="array",
+    categoryarray=association_examples["Pattern"].tolist()[::-1],
+)
+chart_layout(fig_converging_evidence, left=112, bottom=58)
+
+rule_count = len(business_rules)
+
+
+def finding(
+    number: str,
+    headline: str,
+    evidence: str,
+    corroboration: str,
+    implication: str,
+    action: str,
+    boundary: str | None = None,
+) -> html.Div:
+    """Show one decision-ready finding with its evidence chain and response."""
+
+    def fact(label: str, text: str, class_name: str = "") -> html.Div:
+        return html.Div([
+            html.Span(label, className="finding-fact-label"),
+            html.Span(text, className="finding-fact-text"),
+        ], className=f"finding-fact {class_name}".strip())
+
     body = [
         html.Div(headline, className="finding-headline"),
-        html.P(detail, className="finding-detail"),
+        html.Div([
+            fact("Evidence", evidence),
+            fact("Corroboration", corroboration),
+            fact("Business implication", implication),
+            fact("Recommended action", action, "finding-fact-action"),
+        ], className="finding-facts"),
     ]
-    if action:
+    if boundary:
         body.append(html.Div([
-            html.Span("What to do", className="action-label"),
-            html.Span(action, className="action-text"),
-        ], className="finding-action"))
+            html.Span("Evidence boundary", className="evidence-label"),
+            html.Span(boundary, className="evidence-text"),
+        ], className="finding-evidence"))
     return html.Div([
         html.Div(number, className="finding-num"),
         html.Div(body),
@@ -1434,144 +1879,99 @@ def finding(number: str, headline: str, detail: str, action: str | None = None) 
 
 
 def keyfindings_layout() -> html.Section:
-    baseline = metric("observed_default_rate")
-    money_rate = _loss_row(TOP_MONEY_SEGMENT, "default_rate")
-    money_car = _loss_row(TOP_MONEY_SEGMENT, "share_of_credit_at_risk")
-    money_exp = _loss_row(TOP_MONEY_SEGMENT, "share_of_exposure")
-    money_loan = _loss_row(TOP_MONEY_SEGMENT, "median_credit")
-    worst_rate = _loss_row(WORST_RATE_SEGMENT, "default_rate")
-    worst_car = _loss_row(WORST_RATE_SEGMENT, "share_of_credit_at_risk")
-    worst_n = _loss_row(WORST_RATE_SEGMENT, "train_applicants")
-    card_book = _loss_row(CARD_SEGMENT, "share_of_book")
-    card_def = _loss_row(CARD_SEGMENT, "share_of_defaults")
-    card_car = _loss_row(CARD_SEGMENT, "share_of_credit_at_risk")
-    card_util = _loss_row(CARD_SEGMENT, "median_card_utilisation")
-    thin_book = _loss_row(THIN_SEGMENT, "share_of_book")
-    thin_rate = _loss_row(THIN_SEGMENT, "default_rate")
-    data_defects = int(anomaly_investigation["Review Type"].value_counts().get("Data quality check", 0))
-    ext_missing = float(
-        quality.loc[quality["issue"].str.contains("External score 1", case=False, na=False), "affected_share"].iloc[0]
-    ) if quality["issue"].str.contains("External score 1", case=False, na=False).any() else float("nan")
+    exposure_row = require_one(
+        business_view, business_view["Segment"].eq("Larger-Loan Affordability"),
+        "Larger-Loan Affordability segment"
+    )
+    focus_applications = int(focus_view["applicants"].sum())
+    stress_delinquency_sd = dimension_sd("Repayment-Stress History", "Observed delinquency")
+    card_revolving_sd = dimension_sd("Historical Card-Use Intensity", "Revolving intensity")
 
     return html.Section([
-        heading("KEY FINDINGS", "What is happening in this loan book",
-                "Six things the portfolio is telling us, what each one means commercially, and what to do about it. "
-                "The sections behind this one hold the evidence."),
-        html.Div([
-            card("Loans in the book", fmt_int(_total_eval), "Applications analysed", "blue"),
-            card("Customers who fall behind", fmt_pct(baseline, 2), "The number every claim here is measured against", "amber"),
-            card("Distinct customer types", str(len(SEGMENT_ORDER)), "By how they borrow and repay", "green"),
-            card("Files needing a human", fmt_int(_high), f"{_high / _total_eval:.2%} of the book", "red"),
-        ], className="metric-grid"),
-
+        heading(
+            "KEY FINDINGS",
+            "What changes for the credit business",
+            "The three findings below have the clearest operational consequence. Each one links the evidence to a specific business response.",
+        ),
         finding(
             "01",
-            "The safest customers carry the most money at risk.",
-            f"{TOP_MONEY_SEGMENT} falls behind less often than anyone else, {money_rate:.2%} against an "
-            f"{baseline:.2%} book average. It still accounts for {money_car:.0%} of all money at risk and "
-            f"{money_exp:.0%} of total lending. The reason is loan size. Its typical loan is "
-            f"{int(money_loan):,}, roughly three times the smallest segment's, so a low failure rate on a large "
-            "loan costs more than a high failure rate on a small one.",
-            "Size review and monitoring capacity by money at risk rather than by failure rate. A dashboard that "
-            "ranks segments by percentage will send your best people to the cheapest problem.",
+            "Two history-heavy profiles account for most of the specialist queue.",
+            f"Repayment-Stress History and Historical Card-Use Intensity contain {focus_applications:,} of "
+            f"{COMBINED_APPLICATIONS:,} applications ({focus_portfolio_share:.2%}), but contribute {focus_queue_count:,} "
+            f"of the {_targeted_queue:,} targeted reviews ({focus_review_share:.2%}).",
+            "The source records explain why the work concentrates there. Recorded instalment delays sit "
+            f"{stress_delinquency_sd:.2f} standard deviations above the portfolio average in Repayment-Stress History, "
+            f"and historical card activity sits {card_revolving_sd:.2f} standard deviations above average in "
+            "Historical Card-Use Intensity. The queue concentration follows from the evidence in each profile, not from any outside score.",
+            "A small part of the portfolio is likely to absorb most specialist time. It is not one job, however. "
+            "Repayment history calls for a timeline review, while historical card use calls for a current facility and balance check.",
+            "Create two review paths. For Repayment-Stress History, check recency, severity, cure, disputes, hardship and "
+            "current affordability. For Historical Card-Use Intensity, confirm whether the facility is still open, then "
+            "verify current balance, limit, arrears and affordability. Start staffing from the observed queue mix and adjust it using handling time and review yield.",
+            "Shows where review effort will land, not how any application will perform.",
         ),
-        html.Div([
-            panel("Customers, failures, and money", graph(fig_loss_concentration, "standard"),
-                  "Grey is share of customers, blue is share who fell behind, red is share of money at risk. "
-                  "Where red overtakes blue the loans are large. Where blue overtakes red they are small."),
-            panel("How often a group fails, against what it costs", graph(fig_risk_quadrant, "standard"),
-                  "Bubble size is the number of customers. The group furthest left, meaning the one that fails "
-                  "least often, sits highest on cost."),
-        ], className="two-col"),
+        panel(
+            f"{focus_portfolio_share:.1%} of applications account for {focus_review_share:.1%} of the targeted review queue",
+            graph(fig_attention_concentration, "standard"),
+            f"The application denominator is all {COMBINED_APPLICATIONS:,} applications. The queue denominator is the {_targeted_queue:,} exported reviews.",
+            wide=True,
+        ),
 
         finding(
             "02",
-            "The worst-performing group is almost irrelevant to the bottom line.",
-            f"{WORST_RATE_SEGMENT} fails most often, at {worst_rate:.2%}, roughly "
-            f"{worst_rate / baseline:.1f} times the book average. It is also only {int(worst_n):,} customers "
-            f"holding {worst_car:.1%} of the money at risk. Removing its losses entirely would barely move total "
-            "losses. It is the group most people would target first, and financially it is the smallest prize "
-            "on the table.",
-            "Keep it as a focused hardship and treatment queue, where its small size is an advantage. Do not "
-            "build the loss-reduction strategy around it.",
+            "One third of applications carry more than half of the recorded loan amounts.",
+            f"Larger-Loan Affordability contains {int(exposure_row['applicants']):,} applications, or "
+            f"{exposure_row['portfolio_share']:.2%} of the portfolio, yet it carries "
+            f"{exposure_row['credit_amount_share']:.2%} of all recorded loan amounts and "
+            f"{exposure_row['annuity_amount_share']:.2%} of all scheduled payment amounts.",
+            f"A cross-source pattern sharpens the concern: among applications with a loan above six times income and a "
+            f"clean observed repayment record, {leverage_approval_rule['confidence']:.1%} also had at least three quarters "
+            f"of their earlier applications approved, against a {leverage_approval_rule['consequent_baseline']:.1%} baseline. "
+            "Earlier approvals and clean history therefore accompany exactly the loans where affordability matters most, and neither settles it.",
+            "Application volume and amount concentration are different control questions. Where the recorded amounts "
+            "concentrate, a weakness in affordability verification touches a disproportionate share of the money the "
+            "portfolio has committed, whatever the eventual outcomes turn out to be.",
+            "Confirm sustainable income and current obligations, then stress the scheduled payment under the institution's approved lower-income scenario. "
+            "Track application volume and amount concentration as separate measures, and keep affordability standards independent of how routine the segment's history looks.",
+            "Recorded loan amounts are anonymized contract values, not outstanding balance or loss.",
         ),
-        panel("Where the money at risk actually sits", graph(fig_money_pareto, "standard"),
-              "Bars are each group's share of money at risk, largest first. The line is the running total. "
-              "Two groups account for most of it, and the group that fails most often is the last sliver "
-              "on the right.", wide=True),
+        panel(
+            f"{exposure_row['portfolio_share']:.1%} of applications carry {exposure_row['credit_amount_share']:.1%} of recorded loan amounts",
+            graph(fig_amount_concentration, "standard"),
+            f"All three bars share one denominator: the whole {COMBINED_APPLICATIONS:,}-application portfolio.",
+            wide=True,
+        ),
 
         finding(
             "03",
-            "Credit-card borrowing concentrates the risk, and it is the one place you can act quickly.",
-            f"{CARD_SEGMENT} is {card_book:.0%} of customers but {card_def:.0%} of those who fall behind and "
-            f"{card_car:.0%} of money at risk, with typical card usage at {card_util:.0%} of the available limit. "
-            "It is over-represented in trouble on every measure. It is also the one place where the lender keeps "
-            "a live lever. An instalment loan is fixed once signed, but a card limit can be reviewed while the "
-            "customer is still performing.",
-            "Trigger a limit and affordability review on rising card usage, before arrears appear. This is the "
-            "highest-leverage intervention available in the book.",
+            "Prior refusals and late repayment often appear in the same application history.",
+            f"Across the portfolio, {int(prior_lateness_rule['support_count']):,} of "
+            f"{int(prior_lateness_rule['condition_count']):,} applications with at least three prior refusals also have "
+            f"some recorded instalment lateness ({prior_lateness_rule['confidence']:.2%}). The portfolio baseline is "
+            f"{prior_lateness_rule['consequent_baseline']:.2%}, a difference of {prior_lateness_rule['uplift_pp']:.2f} percentage points.",
+            f"The pattern is supported by a second cross-source check inside Lower-Intensity Credit Footprint: "
+            f"{int(bureau_score_rule['support_count']):,} of {int(bureau_score_rule['condition_count']):,} applications "
+            f"with bureau debt at least 80% of bureau credit also have weak available external scores "
+            f"({bureau_score_rule['confidence']:.2%} versus a {bureau_score_rule['consequent_baseline']:.2%} segment baseline).",
+            "Agreement across application history, repayment history, bureau data and external scores makes the review question more precise. "
+            "The broad Lower-Intensity profile can still contain a subgroup whose evidence deserves closer reconciliation.",
+            "For the first pattern, check refusal reason and date alongside lateness severity, recency, cure and disputes. "
+            "For the second, reconcile bureau balance, credit limit and reporting date, then verify which external scores are available and how current they are. "
+            "Finish with current affordability; neither pattern should trigger an automatic decline.",
+            "Exploratory co-occurrence, not causality.",
         ),
-        panel("Which groups produce more trouble than their size predicts", graph(fig_overrepresentation, "standard"),
-              "Share of customers who fall behind divided by share of customers. Anything above 1.00x means the "
-              "group generates more trouble than its headcount would suggest.", wide=True),
+        panel(
+            "Two cross-source checks show the same need for evidence reconciliation",
+            graph(fig_converging_evidence, "standard"),
+            "Grey is the context baseline; blue is the rate when the condition is present.",
+            wide=True,
+        ),
 
-        finding(
-            "04",
-            "A third of the book cannot be assessed properly, and it is not the risky third.",
-            f"{THIN_SEGMENT} is {thin_book:.0%} of customers and falls behind at {thin_rate:.2%}, which is lower "
-            f"than the {baseline:.2%} book average rather than higher. These are people with little borrowing "
-            f"history on file, and {ext_missing:.0%} of the whole book has no external credit score at all. Thin "
-            "information is being experienced as risk when the evidence says these customers perform slightly "
-            "better than average.",
-            "Treat missing history as missing information rather than as bad history. Collect permitted "
-            "alternative evidence so this group can be priced on what it does rather than on what is unknown. "
-            "It is an underserved growth pool, not a threat.",
-        ),
         html.Div([
-            panel("How often each group falls behind", graph(fig_rates, "standard"),
-                  "Measured on customers whose outcome we already know."),
-            panel("How the groups differ", graph(fig_cluster_profiles, "profile"),
-                  "Colour shows distance from the book average, not approval or decline."),
-        ], className="two-col"),
-
-        finding(
-            "05",
-            "Some files are wrong rather than risky, and they are cheaper to fix at the front door.",
-            f"{fmt_int(_high)} files need a human to look at them. Of those, {data_defects:,} fail basic "
-            "plausibility outright. One customer is recorded as paying 0.0% of every amount due while carrying a "
-            "debt-to-limit ratio hundreds of times beyond anything else in the book. These are data-capture "
-            "failures rather than credit decisions, and each one consumes underwriting time that should go to "
-            "real cases.",
-            "Add validation at the point of capture for the handful of fields that produce impossible values. "
-            "Preventing a bad record costs far less than reviewing it later.",
-        ),
-        html.Div([
-            panel("From whole book to review queue", graph(fig_anomaly_funnel, "standard")),
-            panel("What kind of problem each file has", graph(fig_scope, "standard"),
-                  "Most are unusual only in combination. No single field looks wrong, which is why routine "
-                  "checks miss them."),
-        ], className="two-col"),
-
-        finding(
-            "06",
-            "These groups describe the book. They cannot decide a single customer.",
-            f"The gap between the best and worst group is {(worst_rate - loss_view['default_rate'].min()) * 100:.1f} "
-            f"percentage points of failure rate. Even in the worst group, {1 - worst_rate:.0%} of customers keep "
-            "paying. Any rule that declined someone for the group they fall into would be wrong about the large "
-            "majority of them, and would be indefensible to that customer and to a regulator.",
-            "Use these findings to set strategy, staffing, monitoring, and which questions to ask. Use an "
-            "individual's own evidence to make an individual's decision.",
-        ),
-        panel("What a group average hides", graph(fig_outcome_mix, "standard"),
-              "Every group is mostly people who kept paying. The differences between them are real and useful "
-              "for planning, and far too small to justify a decision about any one customer.", wide=True),
-        html.Div([
-            html.Strong("One caution on the numbers above"),
+            html.Strong("Decision boundary"),
             html.Span(
-                f"{TOP_MONEY_SEGMENT} looks safe partly because it was already screened hardest. Large loans "
-                "attract the strictest checks, so the customers who got through are the ones who passed them, "
-                "and we cannot see who was turned away. Reading that low failure rate as permission to relax "
-                "the criteria would remove the very thing producing it."),
+                "The dashboard supports portfolio strategy, staffing, review design, data-quality controls and monitoring. "
+                "It does not approve, decline, price, rank or change a limit for any application. Every finding remains a prompt for a documented human review."),
         ], className="guardrail"),
     ], className="tab-section")
 
@@ -1579,22 +1979,27 @@ def keyfindings_layout() -> html.Section:
 def overview_layout() -> html.Section:
     return html.Section([
         heading("01 - DATA", "Start with the data we actually have",
-                "We use train and test records to find patterns. Any check against TARGET uses the labeled training set only."),
+                "One application portfolio, built from the current application plus five history sources. No outcome label exists anywhere in the analysis."),
         html.Div([
-            card("Applications analysed", "356,255", "307,511 train + 48,744 test", "blue"),
-            card("Training default rate", fmt_pct(metric("observed_default_rate"), 2), "TARGET=1 in the training data", "amber"),
-            card("Customer groups", "5", "K-Means clusters, checked against Ward", "green"),
-            card("Flagged by 3+ methods", fmt_int(anomaly_summary.HIGH_CONFIDENCE), "Sent to the review queue", "red"),
+            card(
+                "Applications analysed",
+                fmt_int(COMBINED_APPLICATIONS),
+                "One portfolio; eight source files",
+                "blue",
+            ),
+            card("History sources per applicant", "5", "Bureau, prior applications, instalments, POS or cash loans, card records", "amber"),
+            card("Application segments", str(len(SEGMENT_ORDER)), "K-Means clusters, checked against Ward", "green"),
+            card("Targeted review queue", fmt_int(_targeted_queue), "Two transparent entry routes", "red"),
         ], className="metric-grid"),
         html.Div([
             panel("Data issues and how we handled them", graph(fig_quality, "standard"),
                   "A missing value can mean something different from a suspicious value, so we handle them separately."),
-            panel("Which features relate to TARGET?", graph(fig_importance, "standard"),
-                  "This training-only check happens after preprocessing. TARGET was not used to form the clusters."),
+            panel("Which evidence exists for each segment", graph(fig_evidence_coverage, "standard"),
+                  "Share of a segment's applications with that source on file. Coverage decides what a reviewer can check; it is not a risk measure."),
         ], className="two-col"),
         html.Div([
             html.Strong("What this report can do"),
-            html.Span("This report describes patterns in the portfolio. It is not a probability-of-default model and cannot approve, reject, price, or explain a loan decision."),
+            html.Span("This report describes portfolio patterns. It is not an individual payment-difficulty prediction or credit-decision model."),
         ], className="guardrail"),
     ], className="tab-section")
 
@@ -1604,24 +2009,21 @@ def segments_layout() -> html.Section:
     if not method_agreement.empty:
         ward_text = f"ARI {method_agreement.adjusted_rand_index.iloc[0]:.3f}"
     return html.Section([
-        heading("02 - CUSTOMER GROUPS", "How the five clusters differ",
-                "The first chart shows broad patterns. The next one puts the actual values side by side, including the observed default rate for training records."),
-        panel("Broad differences between clusters", graph(fig_segment_heatmap, "tall", min_width=720),
-              "Each cell is the cluster average after the features in that row were standardized. Compare clusters across a row. A positive value means higher than the portfolio average, not better.", wide=True),
-        html.H3("Cluster profiles", className="subsection-title"),
+        heading("02 - APPLICATION SEGMENTS", "How the five business segments differ",
+                "Broad patterns first, then the actual values behind them."),
+        panel("Broad differences between segments", graph(fig_segment_heatmap, "tall", mobile_min_width=650),
+              "Each cell is a standardized segment average. Compare across a row; a positive value means above the portfolio average, not better.", wide=True),
+        html.H3("Business segment profiles", className="subsection-title"),
         panel(
-            "Five clusters, side by side",
-            graph(fig_cluster_profiles, "profile"),
-            "Each column is one cluster, with its size and portfolio share in the header. Hover over a cell for the exact value, profile, checks, and suggested review. "
-            "Colors reset on each row, so compare across a row only. Blue means a higher number and amber a lower one. Neither color means safer or riskier. "
-            "All rows use train and test records except the observed default rate. That row uses labeled training records and did not affect clustering. "
-            "A zero for repayment or card history can mean that no history was recorded.",
+            "Five business segments, side by side",
+            graph(fig_cluster_profiles, "profile", mobile_min_width=760),
+            "Each column is one segment. Hover a cell for its value, profile, and suggested review. Colors compare within a row only; blue is higher, amber is lower, neither means safer or riskier.",
             wide=True,
         ),
         html.Div([
-            panel("Cluster size", graph(fig_sizes, "standard")),
+            panel("Segment size", graph(fig_sizes, "standard", mobile_min_width=520)),
             panel("Choosing the number of clusters", graph(fig_k_selection, "standard"),
-                  "K=3 gave the strongest sampled silhouette score. We kept K=5 because the five-group result was stable and gave the business more useful profiles."),
+                  f"K=5 is the elbow and the most seed-stable choice (mean ARI {stability_by_k.loc[5]:.3f}); higher K reaches similar or better silhouette but is far less stable. Full comparison in REPORT.md."),
         ], className="two-col"),
         html.Div([
             panel("Does PCA change the groups?", graph(fig_pca_sensitivity, "standard"),
@@ -1632,101 +2034,127 @@ def segments_layout() -> html.Section:
                 html.P("DBSCAN is shown separately because it finds dense areas and isolated points, not the same type of groups as K-Means."),
             ], className="method-box")),
         ], className="two-col"),
+        panel(
+            "Ward, complete and average linkage on the same sample",
+            html.Div(
+                html.Img(
+                    src=LINKAGE_COMPARISON_SRC,
+                    className="evidence-image",
+                    alt="Three sampled hierarchical dendrograms comparing Ward, complete and average linkage.",
+                ),
+                className="evidence-image-scroll",
+            ),
+            "A 2,000-application sample. Different merge shapes show that hierarchical structure depends on linkage choice; Ward is a sensitivity check, not the one true hierarchy.",
+            wide=True,
+        ),
         html.Div([
-            panel("K-Means on the first two principal components", graph(fig_kmeans, "map", min_width=620),
+            panel("K-Means on the first two principal components", graph(fig_kmeans, "map"),
                   "A stratified sample of 8,000 applications. These two axes are for display. The clustering model used 10 components."),
             panel("DBSCAN density view", graph(fig_dbscan, "map"),
-                  f"All {int(anomaly_summary.N_DBSCAN):,} noise points are shown. Dense points are sampled to keep the chart responsive."),
+                  f"A {int(anomaly_summary.N_DBSCAN_SAMPLE_COVERED):,}-application sample. Noise points are a density signal, not a fraud or anomaly label."),
         ], className="two-col"),
     ], className="tab-section")
 
 
 def rules_layout() -> html.Section:
     return html.Section([
-        heading("03 - ASSOCIATION RULES", "Conditions that often appear together",
-                "We removed rules that simply restate a formula. Each cluster rule uses only the applications in that cluster."),
+        heading(
+            "03 - ASSOCIATION RULES",
+            "Which evidence should be checked together",
+            f"The {rule_count} shortlisted patterns compare applications that match a condition with the same "
+            "portfolio or segment context. They are review prompts, not predictions or lending rules.",
+        ),
+        panel(
+            "How the associated evidence changes when a condition is present",
+            graph(fig_signal_agreement, "rules", mobile_min_width=900),
+            "Grey is the context baseline; blue is the rate when the condition is present. Hover for full detail.",
+            wide=True,
+        ),
+        panel(
+            "How much review work each pattern can generate",
+            graph(fig_rule_workload, "rules", mobile_min_width=700),
+            "Pale: applications matching the condition. Blue: applications matching condition and evidence. Patterns overlap, so bars must not be added.",
+            wide=True,
+        ),
+        panel(
+            "What each pattern means for a reviewer",
+            html.Div(rules_table, className="table-shell"),
+            "Filter by source, context, or phrase. No pattern is an automatic reason to change a credit decision.",
+            wide=True,
+        ),
         html.Div([
-            panel("Rule strength and coverage", graph(fig_rules, "tall")),
-            panel("Average rule lift by cluster", graph(fig_rule_segments, "tall")),
+            panel(
+                "How candidate rules were screened",
+                graph(fig_rule_screening, "standard", mobile_min_width=560),
+                "Removes arithmetic identities and schema-induced relationships. Shortlisting sets presentation volume; it does not make a pattern causal.",
+            ),
+            panel(
+                "Method check",
+                graph(fig_algorithms, "standard", mobile_min_width=520),
+                "Apriori, FP-Growth, and ECLAT check the same portfolio-wide search. Segment FP-Growth uses a different denominator.",
+            ),
         ], className="two-col"),
-        panel("Do the methods agree?", graph(fig_algorithms, "compact"),
-              "Apriori, FP-Growth, and ECLAT found the same global rules. Cluster-level FP-Growth uses only the applications in each cluster, so its metrics have a different denominator.", wide=True),
-        panel("Rules kept for review", html.Div(rules_table, className="table-shell"),
-              "Filter by cluster or condition. The scope column tells you which applications were used to calculate support and confidence.", wide=True),
     ], className="tab-section")
 
 
 def anomalies_layout() -> html.Section:
     counts = anomaly_investigation["Review Type"].value_counts()
+    stress_consensus = int((
+        anomaly_investigation["Segment"].eq("Repayment-Stress History")
+        & anomaly_investigation["Anomaly Scope"].eq("Detector-consensus pattern")
+    ).sum())
+    consensus_total = int(
+        anomaly_investigation["Anomaly Scope"].eq("Detector-consensus pattern").sum()
+    )
+    data_checks = int(counts.get("Source reconciliation", 0))
     return html.Section([
-        heading("04 - RECORDS TO REVIEW", "Why these unusual applications need a closer look",
-                "A record enters the queue when at least three methods agree. The evidence tells the reviewer what to check. The flag itself is never a credit decision."),
+        heading("04 - RECORDS TO REVIEW", "One queue, two entry routes, different work",
+                "Detector agreement finds unusual combinations; a separate route catches one extreme value. Neither is a credit decision."),
         html.Div([
-            card("Flagged by 3+ methods", fmt_int(anomaly_summary.HIGH_CONFIDENCE), "Stronger agreement between methods", "red"),
-            card("Payment or affordability", fmt_int(counts.get("Affordability and repayment review", 0)), "Needs a focused review", "red"),
-            card("Data problems", fmt_int(counts.get("Data quality check", 0)), "Confirm or fix the values first", "amber"),
-            card("Unusual but plausible", fmt_int(counts.get("Unusual but plausible", 0)), "Unusual does not mean risky", "blue"),
+            card("Targeted review queue", fmt_int(_targeted_queue), f"{_targeted_queue / _total_eval:.2%} of the portfolio", "red"),
+            card("Detector consensus", fmt_int(_consensus_route), "Three or more methods agree", "blue"),
+            card("Extreme single-axis value", fmt_int(_single_axis_route), "At least 10 SD; verify the source", "amber"),
+            card("Source reconciliation", fmt_int(data_checks), "Potential inconsistency; verify first", "green"),
         ], className="metric-grid"),
         html.Div([
-            panel("Flags by method", graph(fig_detectors, "standard")),
-            panel("Where methods agree", graph(fig_overlap, "standard", min_width=600),
-                  "Jaccard compares the records shared by two methods, even when they flag different numbers of applications."),
+            panel("How records enter the queue", graph(fig_queue_routes, "standard", mobile_min_width=520),
+                  f"Consensus and the extreme single-axis check are separate controls; their counts sum to {_targeted_queue:,}."),
+            panel("Method flags and queue routes", graph(fig_detectors, "standard"),
+                  f"Five detectors cover all {COMBINED_APPLICATIONS:,} applications; DBSCAN corroborates {_dbscan_queue_corroboration:,} queued records but never votes. Counts overlap, do not add them."),
         ], className="two-col"),
-        html.Div("What kind of unusual", className="subsection-title"),
-        html.P("Two records can both be flagged by the same number of methods and still need completely different "
-               "handling. The scope says what kind of unusual a record is, which decides who reviews it and what "
-               "they check first.", className="subsection-lede"),
+        panel(
+            "Review workload changes materially when the two operating cutoffs move",
+            graph(fig_queue_sensitivity, "standard", mobile_min_width=560),
+            "The selected 3-of-5 and 10-SD cell is a project operating point, not an industry standard.",
+            wide=True,
+        ),
+        panel("Where methods agree", graph(fig_overlap, "standard", mobile_min_width=560),
+              "Jaccard overlap between two methods' flagged records. DBSCAN uses only its "
+              f"{int(anomaly_summary.N_DBSCAN_SAMPLE_COVERED):,}-application sample, so its overlaps are not directly comparable.", wide=True),
+        html.Div("Why each file entered the queue", className="subsection-title"),
         scope_explainer(),
         html.Div([
-            panel("How the queue splits by kind", graph(fig_scope, "standard"),
-                  "Contextual records dominate. They are the ones a single-field rule would never catch."),
-            panel("Kind of unusual by cluster", graph(fig_scope_segment, "standard"),
-                  "Repayment-Stress History holds 2,713 of the 3,190 contextual records. Around a third of that "
-                  "whole segment is contextually unusual, which is why it carries the heaviest review load."),
+            panel("How the queue splits by kind", graph(fig_scope, "standard", mobile_min_width=500),
+                  "Sampled DBSCAN appears only as separate corroboration, never as a queue route."),
+            panel("Kind of unusual by cluster", graph(fig_scope_segment, "standard", mobile_min_width=540),
+                  f"Repayment-Stress History holds {stress_consensus:,} of {consensus_total:,} multi-method reviews, a workload result, not a prediction."),
         ], className="two-col"),
-        panel("Kind of unusual against the type of review it triggers", graph(fig_scope_review, "compact"),
-              "Every one of the 64 data-consistency checks is a global extreme, and none are contextual. That fits "
-              "how capture errors behave: a mistyped figure lands outside the plausible range, whereas a wrong-looking "
-              "combination of otherwise valid figures points at affordability rather than at the data.", wide=True),
+        panel("Kind of unusual against the type of review it triggers", graph(fig_scope_review, "compact", mobile_min_width=540),
+              f"The {data_checks:,} source-reconciliation cases are none confirmed until the source is checked.", wide=True),
+        panel("Point, contextual, and collective records need different first steps", graph(fig_typology, "compact", mobile_min_width=520),
+              "Point: one extreme value, check its source first. Contextual: plausible alone, unusual in combination. Collective: isolated in the sampled density view (a lower bound, not a total).", wide=True),
         html.Div([
-            panel("Why records were flagged", graph(fig_drivers, "tall")),
-            panel("Review queue by cluster", graph(fig_review_segment, "tall")),
+            panel("What reviewers should examine", graph(fig_drivers, "tall", mobile_min_width=580),
+                  "A record can carry several triggers; bars overlap and must not be added."),
+            panel("Review queue by cluster", graph(fig_review_segment, "tall", mobile_min_width=540)),
         ], className="two-col"),
         panel("Where flagged records sit", graph(fig_anomaly_pca, "map"),
-              "Every record flagged by three or more methods is shown. Other records are sampled so the chart stays responsive.", wide=True),
+              "The full targeted queue is shown; other records are sampled for responsiveness.", wide=True),
         panel("Applications to review", html.Div([
-            html.P("Filter or sort the queue, then select an application to see the evidence and next step.", className="table-instruction"),
+            html.P("Select a row to see its evidence and next step.", className="table-instruction"),
             html.Div(anomaly_table_component(), className="table-shell"),
             html.Div("Select an application to see its evidence.", id="anomaly-detail", className="record-detail"),
-        ]), "The dashboard loads ten rows at a time. All 3,758 records remain available.", wide=True),
-    ], className="tab-section")
-
-
-def outcome_layout() -> html.Section:
-    ref_precision = metric("precision", reference_metrics)
-    ref_recall = metric("recall", reference_metrics)
-    return html.Section([
-        heading("05 - DEFAULT OUTCOME CHECK", "Clusters do not predict individual defaults well",
-                "We compare each cluster's observed default rate with TARGET in the training data. A separate logistic model shows what changes when prediction is the goal."),
-        html.Div([
-            card("Cluster flag precision", fmt_pct(metric("precision"), 2), "Among applicants in flagged clusters", "red"),
-            card("Cluster flag recall", fmt_pct(metric("recall"), 2), "Share of observed defaults captured", "blue"),
-            card("Highest cluster rate", fmt_pct(metric("cluster_precision_ceiling"), 2), "Best rate available when selecting a whole cluster", "amber"),
-            card("Logistic model check", f"{fmt_pct(ref_precision, 1)} / {fmt_pct(ref_recall, 1)}", "Precision / recall at the same review volume", "green"),
-        ], className="metric-grid"),
-        panel("Cluster flag vs. logistic check", graph(fig_objective, "standard"),
-              "The logistic model shows what a prediction-focused method can do. It still needs full validation before deployment.", wide=True),
-        html.Div([
-            panel("Default rate by cluster", graph(fig_rates, "standard")),
-            panel("Where the cluster flag is wrong", graph(fig_cm, "standard")),
-        ], className="two-col"),
-        panel("What changes when the cutoff moves", graph(fig_policy, "standard"),
-              "The dashed line shows the project's 1.10x sensitivity setting: a cluster is flagged when its training default rate is at least 10% above that fold's training average. "
-              "It is a transparent comparison point, not an optimized production cutoff. Moving it changes review volume and recall, but it cannot rank applicants within a cluster.", wide=True),
-        html.Div([
-            html.Strong("Before anyone uses these results"),
-            html.Span("These results describe the dataset. They cannot approve, reject, price, or explain an individual loan decision. Production use would require time-based validation, calibration, fairness and proxy checks, policy approval, and ongoing monitoring."),
-        ], className="guardrail"),
+        ]), f"All {_targeted_queue:,} targeted reviews are available, ten rows at a time.", wide=True),
     ], className="tab-section")
 
 
@@ -1736,7 +2164,6 @@ SECTION_BUILDERS = {
     "segments": segments_layout,
     "rules": rules_layout,
     "anomalies": anomalies_layout,
-    "outcome": outcome_layout,
 }
 
 # Rail order. Key findings leads because it carries the conclusions; the phase
@@ -1747,7 +2174,6 @@ SECTIONS = [
     ("segments", "Segments", "02"),
     ("rules", "Rules", "03"),
     ("anomalies", "Anomalies", "04"),
-    ("outcome", "Outcome", "05"),
 ]
 
 
@@ -1775,9 +2201,9 @@ app.layout = html.Div([
             for key, label, num in SECTIONS
         ], className="rail-nav"),
         html.Div([
-            html.Div([html.Span("356,255"), html.Span("applications")], className="rail-stat"),
-            html.Div([html.Span("307,511"), html.Span("labelled (train)")], className="rail-stat"),
-            html.Div([html.Span("48,744"), html.Span("unlabelled (test)")], className="rail-stat"),
+            html.Div([html.Span(f"{COMBINED_APPLICATIONS:,}"), html.Span("applications")], className="rail-stat"),
+            html.Div([html.Span(str(len(SEGMENT_ORDER))), html.Span("business segments")], className="rail-stat"),
+            html.Div([html.Span(f"{_targeted_queue:,}"), html.Span("targeted reviews")], className="rail-stat"),
         ], className="rail-meta"),
     ], className="rail"),
     html.Div([
@@ -1891,19 +2317,38 @@ def update_anomaly_table(page_current, page_size, sort_by, filter_query):
 @app.callback(
     Output("anomaly-detail", "children"),
     Input("anomaly-table", "active_cell"),
-    State("anomaly-table", "data"),
+    Input("anomaly-table", "data"),
     prevent_initial_call=True,
 )
 def show_anomaly_detail(active_cell, page_data):
     if not active_cell or not page_data:
         return "Select an application to see its evidence."
-    record_id = page_data[active_cell["row"]]["SK_ID_CURR"]
-    row = anomaly_investigation.loc[anomaly_investigation.SK_ID_CURR.eq(record_id)].iloc[0]
+    row_index = int(active_cell.get("row", -1))
+    if row_index < 0 or row_index >= len(page_data):
+        return "Select an application to see its evidence."
+    record_id = page_data[row_index]["SK_ID_CURR"]
+    matches = anomaly_investigation.loc[anomaly_investigation.SK_ID_CURR.eq(record_id)]
+    if len(matches) != 1:
+        return "This application is no longer available in the current review data."
+    row = matches.iloc[0]
+    density_status = str(row["Sampled Density Corroboration"])
+    density_short = {
+        "Not assessed": "outside the DBSCAN sample",
+        "Assessed (not isolated)": "in the DBSCAN sample, not isolated",
+        "Assessed (isolated)": "in the DBSCAN sample, isolated (corroboration only)",
+    }.get(density_status, "sample status unavailable")
     return html.Div([
         html.Div([
-            html.Span(f"Applicant {int(row.SK_ID_CURR):,}", className="record-id"),
+            html.Span(f"Application {int(row.SK_ID_CURR):,}", className="record-id"),
             html.Span(row["Priority"], className="record-priority"),
         ], className="record-head"),
+        html.Div([
+            html.Strong("Outlier type: "), html.Span(row["Outlier Type Short"]),
+            html.Span("  |  "),
+            html.Strong("Entered via: "), html.Span(row["Queue Route"]),
+            html.Span("  |  "),
+            html.Strong("DBSCAN: "), html.Span(density_short),
+        ], className="record-meta"),
         html.Div([html.Strong("Evidence"), html.P(row["Record Evidence"])]),
         html.Div([html.Strong("Why it matters"), html.P(row["Business Interpretation"])]),
         html.Div([html.Strong("What to do next"), html.P(row["Recommended Action"])]),

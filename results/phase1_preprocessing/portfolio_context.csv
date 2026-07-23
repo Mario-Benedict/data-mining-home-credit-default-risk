@@ -1,5 +1,5 @@
 measure,value,business_interpretation
-Combined applications,356255.0,Train + test used for unsupervised pattern discovery
-Labeled train applications,307511.0,Only these rows may enter TARGET evaluation
-Unlabeled test applications,48744.0,Excluded from precision and recall
-Observed train default rate,0.08072881945686496,Payment-difficulty label prevalence; not a population PD
+Applications,356255,One application portfolio; every phase reads the same population
+Source files,8,"One application table assembled from two files, plus five behavioural history sources across six files"
+History sources per applicant,5,"Bureau, previous applications, POS or cash loans, instalments, card balances"
+Applications with a bureau record,305811,"Evidence availability, not a credit-quality statement"

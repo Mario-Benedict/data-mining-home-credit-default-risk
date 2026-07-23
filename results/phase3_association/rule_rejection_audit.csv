@@ -1,5 +1,7 @@
 reason,rules
 algebraic_financial_identity,2460
-accepted_nontrivial,1706
+accepted_cross_source,689
+nested_previous_count_definition,538
+same_bureau_derived_family,469
 same_source_missingness_identity,274
-schema_induced_missingness_identity,76
+schema_induced_missingness_identity,86

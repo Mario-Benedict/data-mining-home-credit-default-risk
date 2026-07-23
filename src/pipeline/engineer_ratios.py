@@ -6,7 +6,7 @@ Derived features (EDA Section 7, 10):
   YEARS_EMPLOYED_CLEAN = |DAYS_EMPLOYED| / 365   (NaN for sentinel rows)
   CREDIT_TO_INCOME     = AMT_CREDIT / AMT_INCOME_TOTAL
   ANNUITY_TO_INCOME    = AMT_ANNUITY / AMT_INCOME_TOTAL   (debt-service ratio)
-  CREDIT_TERM_MONTHS   = AMT_CREDIT / AMT_ANNUITY         (implied loan term)
+  CREDIT_TO_ANNUITY    = AMT_CREDIT / AMT_ANNUITY         (payment-size proxy; not contractual term)
   GOODS_TO_CREDIT      = AMT_GOODS_PRICE / AMT_CREDIT     (LTV proxy)
 
 DAYS_* conversion: stored as negative days before application date.
@@ -59,9 +59,12 @@ def run(df: pd.DataFrame) -> pd.DataFrame:
     # Use post-winsorize AMT_INCOME_TOTAL (log not yet applied)
     df["CREDIT_TO_INCOME"] = df["AMT_CREDIT"] / df["AMT_INCOME_TOTAL"].replace(0, np.nan)
     df["ANNUITY_TO_INCOME"] = df["AMT_ANNUITY"] / df["AMT_INCOME_TOTAL"].replace(0, np.nan)
-    df["CREDIT_TERM_MONTHS"] = df["AMT_CREDIT"] / df["AMT_ANNUITY"].replace(0, np.nan)
+    # The source dictionary does not establish payment frequency, interest,
+    # fees, or amortisation.  This is therefore a dimensionless credit-to-
+    # annuity proxy, not a contractual term measured in months.
+    df["CREDIT_TO_ANNUITY"] = df["AMT_CREDIT"] / df["AMT_ANNUITY"].replace(0, np.nan)
     df["GOODS_TO_CREDIT"] = df["AMT_GOODS_PRICE"] / df["AMT_CREDIT"].replace(0, np.nan)
-    log("  Derived: CREDIT_TO_INCOME, ANNUITY_TO_INCOME, CREDIT_TERM_MONTHS, GOODS_TO_CREDIT")
+    log("  Derived: CREDIT_TO_INCOME, ANNUITY_TO_INCOME, CREDIT_TO_ANNUITY, GOODS_TO_CREDIT")
 
     # Log transforms
     for col in LOG_TRANSFORM_COLS:

@@ -30,7 +30,7 @@ for what they do instead of for where they sit in the queue.
     engineer_ratios          leverage and burden ratios, log transforms, drop redundant cols
     encode_categoricals      binary / ordinal / frequency encoding (no one-hot)
     build_matrices           the three output views: business, clustering, anomaly
-    check_features           correlation + MI report. Selects nothing; see its docstring
+    check_features           publishes the keep/drop audit plus correlation diagnostics
 """
 import os
 import sys
@@ -173,7 +173,7 @@ def _run_steps(orchestrator: str = "plain Python") -> None:
     log("Output: datasets/final/features_business.csv   (readable, for case review)")
     log("        datasets/final/features_clustering.csv (clipped, for K-Means)")
     log("        datasets/final/features_anomaly.csv    (unclipped, for Phase 4)")
-    log("        results/phase1_preprocessing/feature_importance.csv, high_corr_pairs.csv")
+    log("        results/phase1_preprocessing/feature_selection_decisions.csv, high_corr_pairs.csv")
     log("=" * 60)
 
 
