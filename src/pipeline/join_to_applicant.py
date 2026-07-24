@@ -24,6 +24,24 @@ def run(dfs: dict, agg_dfs: dict) -> pd.DataFrame:
     app = pd.concat([train, test], axis=0, ignore_index=True)
     log_shape("app_combined", app)
 
+    # Duplicate check. The two application files are disjoint by construction,
+    # but this is the point where a stray duplicated applicant would silently
+    # double-count into every downstream count, so it is verified explicitly
+    # rather than assumed. Exact row duplicates are dropped; a duplicated
+    # identifier with differing rows is a data fault and stops the pipeline.
+    exact_dups = int(app.duplicated().sum())
+    if exact_dups:
+        app = app.drop_duplicates(ignore_index=True)
+        log(f"  Dropped {exact_dups:,} exact duplicate application rows")
+    id_dups = int(app["SK_ID_CURR"].duplicated().sum())
+    if id_dups:
+        raise ValueError(
+            f"{id_dups:,} applications share an SK_ID_CURR with conflicting rows; "
+            "resolve the source conflict before joining histories."
+        )
+    log(f"  Applicant identifier is unique across all {len(app):,} rows "
+        f"({exact_dups} exact duplicates removed)")
+
     bureau_ids = set(agg_dfs["bureau_agg"]["SK_ID_CURR"])
     app["FLAG_NO_BUREAU"] = (~app["SK_ID_CURR"].isin(bureau_ids)).astype(np.int8)
     log(f"  FLAG_NO_BUREAU=1 count: {app['FLAG_NO_BUREAU'].sum():,}")
