@@ -22,8 +22,9 @@ PATHS = {
 
 # Sentinel value (EDA Section 4, 6)
 # DAYS_EMPLOYED = 365243 encodes pensioners/unemployed; not a real duration.
-# The train-only TARGET=1 rate differs across the sentinel and non-sentinel
-# groups. This is descriptive and does not make the sentinel a risk rule.
+# The flag is retained only to separate structural missingness from real tenure.
+# It correlates with life stage, so it is documented as a fairness-sensitivity
+# limitation rather than used as a risk rule.
 DAYS_EMPLOYED_SENTINEL = 365_243
 
 # Housing column triplication (EDA Section 7)
@@ -62,12 +63,13 @@ DAYS_COLS = [
 ]
 
 # Rare income types to group (EDA Section 5)
-# Total n=55 across 4 categories; too sparse for stable cluster membership.
+# Total n=59 across 4 categories in the stacked 356,255-application portfolio;
+# too sparse for stable cluster membership.
 RARE_INCOME_TYPES = ["Unemployed", "Student", "Businessman", "Maternity leave"]
 RARE_INCOME_LABEL = "Other_Rare"
 
 # ORGANIZATION_TYPE macro-sector mapping (EDA Section 5)
-# 58 granular categories -> 12 meaningful sectors.
+# 58 granular categories -> 16 macro-sectors (see EDA Section 9 justification table).
 ORG_TYPE_MAP = {
     "Business Entity Type 1": "Private_Business",
     "Business Entity Type 2": "Private_Business",
@@ -134,7 +136,7 @@ ORG_TYPE_MAP = {
 }
 
 # Outlier / winsorize / cap config (EDA Section 6)
-# AMT_INCOME_TOTAL: p99 = 472,500; max = 117,000,000 (247x median).
+# AMT_INCOME_TOTAL: p99 = 486,000 on the stacked portfolio; max = 117,000,000 (765x p99).
 # Cap first, then log-transform.
 WINSORIZE_CONFIG = {
     "AMT_INCOME_TOTAL": 0.99,    # cap at p99
@@ -158,8 +160,8 @@ LOG_TRANSFORM_COLS = [
 
 # Median imputation: numeric fields with MCAR / moderate missingness.
 MEDIAN_IMPUTE_COLS = [
-    "EXT_SOURCE_2",        # 0.21% missing; safe to median-impute
-    "EXT_SOURCE_3",        # 19.83% missing; median impute after flag created
+    "EXT_SOURCE_2",        # 0.19% missing; safe to median-impute
+    "EXT_SOURCE_3",        # 19.55% missing; median impute after flag created
     "AMT_ANNUITY",         # 0.0% missing in train, small gap in test
     "AMT_GOODS_PRICE",     # 0.09% missing
     "CNT_FAM_MEMBERS",     # < 1% missing
@@ -183,7 +185,9 @@ ZERO_IMPUTE_COLS = ["OWN_CAR_AGE"] + BUILDING_MODE_COLS
 # Mode imputation: categorical fields.
 MODE_IMPUTE_COLS = ["NAME_TYPE_SUITE"]
 
-# EXT_SOURCE_1: 56.4% missing. Impute with median AFTER creating FLAG_EXT_SOURCE_1_MISSING.
+# EXT_SOURCE_1: 54.43% missing. Flag first, then median-impute for the readable
+# business artifact only. The imputed column never enters a mining matrix; see the
+# note in CLUSTERING_FEATURES for why.
 # OCCUPATION_TYPE: 31.4% missing. Imputed with mode per income type group in flag_and_impute_missing.
 
 # Categorical fields with structural absence -> fill with explicit label.
@@ -237,7 +241,24 @@ CLUSTERING_FEATURES = [
 
     # Opaque external scores. Pairwise correlation is modest, but that does not
     # prove independent source construction or justify double-counting.
-    "EXT_SOURCE_1",              # 54.4% missing in combined data -> median + flag
+    # EXT_SOURCE_1 is deliberately ABSENT from the mining matrices.
+    #
+    # It is unavailable for 54.43% of applications. Median imputation therefore
+    # parks more than half the portfolio on one identical coordinate, and those
+    # are exactly the rows where FLAG_EXT_SOURCE_1_MISSING equals 1. The axis
+    # would then be a near-duplicate of its own flag: the same fact encoded
+    # twice, which double-weights it in every Euclidean distance, and a large
+    # artificial mass point that a density or covariance detector reads as the
+    # densest, most normal region of the space.
+    #
+    # Keeping the flag and dropping the imputed score keeps the information
+    # that is actually observed (whether the score exists) and discards the
+    # information that was manufactured (a median standing in for an absent
+    # value). The observed values are not lost: SOURCE_EXT_SOURCE_1 and the
+    # flag both remain in features_business, so Phase 3 masks by the flag and
+    # mines only genuinely observed scores, and record review still shows the
+    # supplied value. EXT_SOURCE_2 (0.19% missing) and EXT_SOURCE_3 (19.55%)
+    # carry external-score evidence into the mining space without this defect.
     "EXT_SOURCE_2",
     "EXT_SOURCE_3",
     "FLAG_EXT_SOURCE_1_MISSING", # score unavailable: uncertainty indicator
@@ -297,8 +318,8 @@ CLUSTERING_FEATURES = [
 #  K-Means works on Euclidean distance. OHE turns one nominal column into N
 #  binary columns, which (a) inflates dimensionality with sparse axes, and
 #  (b) forces every pair of categories to sit at the SAME distance sqrt2 apart,
-#  even when some categories are far more alike than others. For a 12-sector
-#  ORGANIZATION_TYPE that means ~11 extra axes that collectively outweigh a
+#  even when some categories are far more alike than others. For a 16-sector
+#  ORGANIZATION_TYPE that means ~15 extra axes that collectively outweigh a
 #  single standardized continuous feature. An earlier run also produced a
 #  perfectly collinear trio (FLAG_SENTINEL_EMPLOYED == ORGANIZATION_TYPE_Unknown
 #  == NAME_INCOME_TYPE_Pensioner, r ~ 1.0) - a direct symptom of OHE on a

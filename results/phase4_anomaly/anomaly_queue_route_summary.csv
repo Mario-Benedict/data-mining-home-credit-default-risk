@@ -1,11 +1,12 @@
 Queue Route,Review Type,Anomaly Scope,Outlier Type,applications,population,automatic_decision_allowed
-Detector consensus,Affordability / repayment review,Detector-consensus pattern,Collective (sampled sparse-density group),14,Targeted review queue,No
-Detector consensus,Affordability / repayment review,Detector-consensus pattern,Contextual (unusual multivariate combination),1996,Targeted review queue,No
-Detector consensus,Affordability / repayment review,Detector-consensus pattern,Point (globally extreme single value),1889,Targeted review queue,No
-Detector consensus,Data consistency check,Detector-consensus pattern,Contextual (unusual multivariate combination),32,Targeted review queue,No
-Detector consensus,Data consistency check,Detector-consensus pattern,Point (globally extreme single value),20,Targeted review queue,No
-Detector consensus,Rare but plausible profile,Detector-consensus pattern,Contextual (unusual multivariate combination),28,Targeted review queue,No
+Detector consensus,Affordability / repayment review,Detector-consensus pattern,Collective (mutually linked separated group),74,Targeted review queue,No
+Detector consensus,Affordability / repayment review,Detector-consensus pattern,Contextual (unusual against its own segment),1913,Targeted review queue,No
+Detector consensus,Affordability / repayment review,Detector-consensus pattern,Point (globally extreme single value),1901,Targeted review queue,No
+Detector consensus,Data consistency check,Detector-consensus pattern,Contextual (unusual against its own segment),37,Targeted review queue,No
+Detector consensus,Data consistency check,Detector-consensus pattern,Point (globally extreme single value),24,Targeted review queue,No
+Detector consensus,Rare but plausible profile,Detector-consensus pattern,Collective (mutually linked separated group),1,Targeted review queue,No
+Detector consensus,Rare but plausible profile,Detector-consensus pattern,Contextual (unusual against its own segment),32,Targeted review queue,No
 Detector consensus,Rare but plausible profile,Detector-consensus pattern,Point (globally extreme single value),1,Targeted review queue,No
-Extreme single-axis value,Affordability / repayment review,Portfolio single-axis extreme,Point (globally extreme single value),2348,Targeted review queue,No
-Extreme single-axis value,Data consistency check,Portfolio single-axis extreme,Point (globally extreme single value),69,Targeted review queue,No
+Extreme single-axis value,Affordability / repayment review,Portfolio single-axis extreme,Point (globally extreme single value),2336,Targeted review queue,No
+Extreme single-axis value,Data consistency check,Portfolio single-axis extreme,Point (globally extreme single value),65,Targeted review queue,No
 Extreme single-axis value,Rare but plausible profile,Portfolio single-axis extreme,Point (globally extreme single value),7,Targeted review queue,No

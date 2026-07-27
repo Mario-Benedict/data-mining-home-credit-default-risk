@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.domain_credit import SAMPLED_DENSITY_STATES, build_anomaly_investigation
+from src.domain_credit import DENSITY_STATES, build_anomaly_investigation
 
 DATA = ROOT / "datasets"
 P2 = ROOT / "results" / "phase2_clustering"
@@ -333,7 +333,7 @@ def nullable_boolean_series(series: pd.Series, field: str) -> pd.Series:
     return series.map(parse).astype("boolean")
 
 
-def sampled_density_states(frame: pd.DataFrame) -> pd.Series:
+def density_states(frame: pd.DataFrame) -> pd.Series:
     """Map DBSCAN coverage and noise without treating unsampled rows as negative."""
     required = {"dbscan_sample_covered", "dbscan_sample_noise"}
     missing = required.difference(frame.columns)
@@ -363,14 +363,14 @@ def named_labels() -> pd.DataFrame:
         DATA / "final" / "cluster_labels.csv",
         usecols=["SK_ID_CURR", "CLUSTER_KMEANS"],
     )
-    names = pd.read_csv(P2 / "cluster_names.csv", usecols=["cluster_id", "nama"])
+    names = pd.read_csv(P2 / "cluster_names.csv", usecols=["cluster_id", "segment_name"])
     labels = labels.merge(
         names,
         left_on="CLUSTER_KMEANS",
         right_on="cluster_id",
         how="left",
         validate="many_to_one",
-    ).rename(columns={"nama": "Segment"})
+    ).rename(columns={"segment_name": "Segment"})
     if labels["Segment"].isna().any():
         raise ValueError("At least one cluster label has no business segment name.")
     return labels[["SK_ID_CURR", "CLUSTER_KMEANS", "Segment"]]
@@ -420,20 +420,42 @@ def build_segment_full_profiles(labels: pd.DataFrame) -> pd.DataFrame:
 
     One row per population and business field: mean and standard deviation on
     the readable business scale, plus the modal value for low-cardinality
-    fields. The sampled DBSCAN noise population is profiled as its own group
-    against its own 30,000-application sample base, because the density view
-    never assessed the other applications.
+    fields. The DBSCAN noise population is profiled as its own group against
+    the whole portfolio, because Phase 2 now runs DBSCAN on all 356,255
+    applications in the distance-preserving space. An earlier version read the
+    30,000-row UMAP sample here, which profiled 519 records and described them
+    as if they were the portfolio's isolated applications.
     """
     features = pd.read_csv(DATA / "final" / "features_business.csv")
     data = features.merge(labels, on="SK_ID_CURR", how="inner", validate="one_to_one")
     if len(data) != len(labels):
         raise ValueError("Full profiles did not match every combined application ID.")
 
-    sample = pd.read_csv(
-        P2 / "dbscan_umap_sample.csv", usecols=["SK_ID_CURR", "IS_NOISE"]
+    # anomaly_combined.csv is keyed by ROW_ID, so the applicant identifier comes
+    # back through the label file rather than being assumed to align by position.
+    density = pd.read_csv(
+        P4 / "anomaly_combined.csv",
+        usecols=["ROW_ID", "dbscan_sample_covered", "dbscan_sample_noise"],
+    ).merge(
+        pd.read_csv(
+            DATA / "final" / "cluster_labels.csv", usecols=["ROW_ID", "SK_ID_CURR"]
+        ),
+        on="ROW_ID",
+        how="inner",
+        validate="one_to_one",
     )
-    noise_flags = nullable_boolean_series(sample["IS_NOISE"], "IS_NOISE").fillna(False)
-    noise_ids = set(sample.loc[noise_flags, "SK_ID_CURR"].astype(int))
+    covered = nullable_boolean_series(
+        density["dbscan_sample_covered"], "dbscan_sample_covered"
+    )
+    if not covered.fillna(False).all():
+        raise ValueError(
+            "The density view must cover every application before Appendix A profiles "
+            "its noise population; a sampled denominator has come back."
+        )
+    noise_flags = nullable_boolean_series(
+        density["dbscan_sample_noise"], "dbscan_sample_noise"
+    ).fillna(False)
+    noise_ids = set(density.loc[noise_flags, "SK_ID_CURR"].astype(int))
 
     mining_columns = set(
         pd.read_csv(DATA / "final" / "features_clustering.csv", nrows=0).columns
@@ -448,11 +470,11 @@ def build_segment_full_profiles(labels: pd.DataFrame) -> pd.DataFrame:
         for segment in sorted(data["Segment"].unique())
     ]
     populations.append((
-        "DBSCAN sampled noise",
+        "DBSCAN density noise",
         data.loc[data["SK_ID_CURR"].isin(noise_ids)],
-        len(sample),
-        "30,000-application UMAP/DBSCAN sample; noise is a sampled density state, "
-        "not a full-portfolio anomaly label",
+        len(density),
+        "All 356,255 applications, 10-component distance-preserving space; noise is "
+        "a density state, not an anomaly label, and never votes in the review queue",
     ))
 
     rows = []
@@ -878,16 +900,16 @@ def main() -> None:
     assert investigation.loc[extreme_route, "Extreme Trigger Standardized Value"].abs().ge(10).all()
     assert investigation.loc[extreme_route, "Anomaly Scope"].eq("Portfolio single-axis extreme").all()
     assert investigation.loc[~extreme_route, "Anomaly Scope"].eq("Detector-consensus pattern").all()
-    assert investigation["Sampled Density Corroboration"].isin(SAMPLED_DENSITY_STATES).all()
-    combined_density_states = sampled_density_states(combined)
+    assert investigation["Density Corroboration"].isin(DENSITY_STATES).all()
+    combined_density_states = density_states(combined)
     targeted_density = combined.loc[
         combined["anomaly_category"].isin(["TARGETED_REVIEW", "HIGH_CONFIDENCE_ANOMALY"]),
         ["ROW_ID"],
     ].copy()
-    targeted_density["Expected Sampled Density Corroboration"] = combined_density_states.loc[
+    targeted_density["Expected Density Corroboration"] = combined_density_states.loc[
         targeted_density.index
     ]
-    density_audit = investigation[["ROW_ID", "Sampled Density Corroboration"]].merge(
+    density_audit = investigation[["ROW_ID", "Density Corroboration"]].merge(
         targeted_density,
         on="ROW_ID",
         how="outer",
@@ -895,15 +917,15 @@ def main() -> None:
         indicator=True,
     )
     assert density_audit["_merge"].eq("both").all()
-    assert density_audit["Sampled Density Corroboration"].eq(
-        density_audit["Expected Sampled Density Corroboration"]
+    assert density_audit["Density Corroboration"].eq(
+        density_audit["Expected Density Corroboration"]
     ).all()
-    actual_density_counts = investigation["Sampled Density Corroboration"].value_counts()
+    actual_density_counts = investigation["Density Corroboration"].value_counts()
     expected_density_counts = targeted_density[
-        "Expected Sampled Density Corroboration"
+        "Expected Density Corroboration"
     ].value_counts()
-    assert actual_density_counts.reindex(SAMPLED_DENSITY_STATES, fill_value=0).to_dict() == (
-        expected_density_counts.reindex(SAMPLED_DENSITY_STATES, fill_value=0).to_dict()
+    assert actual_density_counts.reindex(DENSITY_STATES, fill_value=0).to_dict() == (
+        expected_density_counts.reindex(DENSITY_STATES, fill_value=0).to_dict()
     )
     assert int(screening.iloc[-1]["remaining_rules"]) == len(selected_rules)
     assert 10 <= len(selected_rules) <= 12

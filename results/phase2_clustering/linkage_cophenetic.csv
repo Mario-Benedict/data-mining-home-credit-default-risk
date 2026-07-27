@@ -1,4 +1,4 @@
-linkage,cophenetic_correlation,sample_size,space,note
-ward,0.4469832448537119,2000,10-component clustering PCA space,Chosen operating linkage; balanced merges suit portfolio segmentation
-complete,0.6740954946826448,2000,10-component clustering PCA space,"Comparison linkage; higher fidelity can coexist with chained, unusable groups"
-average,0.8087716821896658,2000,10-component clustering PCA space,"Comparison linkage; higher fidelity can coexist with chained, unusable groups"
+linkage,cophenetic_correlation,largest_group_share,smallest_group_share,groups_below_1pct,sample_size,space,note
+ward,0.4627296930089272,0.3365,0.031,0,2000,10-component clustering PCA space,Chosen operating linkage: balanced merges support five distinct review workflows
+complete,0.6337002470358031,0.9405,0.0035,2,2000,10-component clustering PCA space,Comparison linkage: higher distance fidelity can coexist with unusable group sizes
+average,0.8021776865364335,0.988,0.001,4,2000,10-component clustering PCA space,Comparison linkage: higher distance fidelity can coexist with unusable group sizes

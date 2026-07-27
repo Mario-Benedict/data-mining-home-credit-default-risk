@@ -1,0 +1,4 @@
+score,observed_applications,applications_modelled,bureau_only_r2,application_only_r2,bureau_advantage,independence_verdict
+EXT_SOURCE_1,162345,80000,0.04906669441413558,0.06879514157819011,-0.01972844716405453,Not reconstructible from bureau data; the two sources carry different information
+EXT_SOURCE_2,355587,80000,0.0155354699030823,0.03654262662238361,-0.021007156719301312,Not reconstructible from bureau data; the two sources carry different information
+EXT_SOURCE_3,286622,80000,0.36772684846208403,0.03584544917148502,0.331881399290599,Partly overlapping with bureau data; report the overlap as a caveat

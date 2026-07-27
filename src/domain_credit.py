@@ -30,7 +30,10 @@ METHOD_COLUMNS = {
     "is_lof_outlier": "Local Outlier Factor",
 }
 
-SAMPLED_DENSITY_STATES = (
+DENSITY_STATES = (
+    # Retained for schema stability. Since the density view became
+    # portfolio-wide this state is empty by construction, and the validator
+    # asserts that it matches the count of uncovered rows, which is now zero.
     "Not assessed",
     "Assessed (not isolated)",
     "Assessed (isolated)",
@@ -194,7 +197,7 @@ def _nullable_boolean(value: object, field: str) -> bool | None:
     raise ValueError(f"{field} contains an invalid Boolean value: {value!r}")
 
 
-def _sampled_density_state(row: pd.Series) -> str:
+def _density_state(row: pd.Series) -> str:
     """Describe DBSCAN sample coverage separately from its isolation result."""
     covered = _nullable_boolean(
         row.get("dbscan_sample_covered", pd.NA), "dbscan_sample_covered"
@@ -217,31 +220,119 @@ def _sampled_density_state(row: pd.Series) -> str:
 
 OUTLIER_TYPES = (
     "Point (globally extreme single value)",
-    "Collective (sampled sparse-density group)",
-    "Contextual (unusual multivariate combination)",
+    "Collective (mutually linked separated group)",
+    "Contextual (unusual against its own segment)",
 )
+
+# A record is contextually unusual when it sits this far from the median of its
+# OWN segment, measured in robust (median absolute deviation) units. Three
+# robust deviations is the standard screening distance for a median/MAD scale
+# and, in this portfolio, it separates an applicant who merely sits high inside
+# a high-amount segment from one who does not belong to the segment's shape at
+# all. The threshold selects the evidence label, never a credit decision.
+CONTEXTUAL_PEER_THRESHOLD = 3.0
+
+
+def _peer_relative_extreme(
+    row: pd.Series,
+    medians: pd.DataFrame,
+    scales: pd.DataFrame,
+) -> tuple[float, str]:
+    """Largest robust deviation of this record from the centre of its own segment.
+
+    A contextual outlier is unusual *relative to its context*, not relative to
+    the portfolio. The context here is the applicant's Phase 2 segment, and the
+    reference is that segment's median with a median-absolute-deviation scale,
+    so a long-tailed field such as card balance cannot inflate the distance the
+    way a mean and standard deviation would.
+    """
+    cid = int(row["CLUSTER_KMEANS"])
+    if cid not in medians.index:
+        return float("nan"), ""
+    best_score, best_column = float("nan"), ""
+    for column in medians.columns:
+        value = _number(row, column)
+        median = medians.loc[cid, column]
+        scale = scales.loc[cid, column]
+        if not (_present(value) and _present(median) and _present(scale) and scale > 0):
+            continue
+        score = abs(value - median) / scale
+        if not _present(best_score) or score > best_score:
+            best_score, best_column = score, column
+    return best_score, best_column
 
 
 def _outlier_type(row: pd.Series) -> str:
-    """Classify the record in the point / contextual / collective typology.
+    """Classify the record in the point / collective / contextual typology.
 
-    Precedence: a value >=10 SD on one prepared axis is anomalous with no
-    context at all, so it outranks the sampled density view; DBSCAN noise
-    corroboration marks records isolated together in the sampled embedding;
-    everything else entered on multivariate detector agreement alone, i.e.
-    each individual value is plausible and only the combination is unusual.
+    The three types answer three different questions, so each is decided by the
+    evidence that actually defines it rather than by elimination:
+
+    * Point: the value is extreme against the whole portfolio (>=10 SD on one
+      prepared axis). No context is needed to call it unusual, which is why it
+      takes precedence.
+    * Collective: the record belongs to a mutually linked group whose members
+      are closer to each other than any of them is to the ordinary portfolio.
+      That is a group property, not an individual one, and it is measured in
+      the detection space rather than borrowed from a sampled projection.
+    * Contextual: the record is ordinary for the portfolio but does not fit the
+      shape of its own segment, or is unusual only as a combination of fields.
+
+    ``Typology Basis`` in the exported investigation states which evidence
+    earned the label, so the contextual class is auditable instead of residual.
     """
     extreme = _nullable_boolean(
         row.get("extreme_single_axis", pd.NA), "extreme_single_axis"
     )
     if extreme is True:
         return OUTLIER_TYPES[0]
-    noise = _nullable_boolean(
-        row.get("dbscan_sample_noise", pd.NA), "dbscan_sample_noise"
+    collective = _nullable_boolean(
+        row.get("collective_group", pd.NA), "collective_group"
     )
-    if noise is True:
+    if collective is True:
         return OUTLIER_TYPES[1]
     return OUTLIER_TYPES[2]
+
+
+def _typology_basis(
+    outlier_type: str,
+    row: pd.Series,
+    peer_score: float,
+    peer_column: str,
+    detector_count: int,
+) -> str:
+    """State the evidence that earned the typology label for this record."""
+    if outlier_type == OUTLIER_TYPES[0]:
+        feature = str(row.get("_EXTREME_FEATURE", "")).strip()
+        label = EVIDENCE_FEATURE_LABELS.get(feature, feature.replace("_", " ").lower())
+        value = _number(row, "_EXTREME_STANDARDIZED_VALUE")
+        return (
+            f"Portfolio reference: {label} sits {value:+.1f} standard deviations from the "
+            "portfolio mean, which is unusual without reference to any peer group"
+            if _present(value) else
+            "Portfolio reference: a prepared axis exceeds 10 standard deviations from the portfolio mean"
+        )
+    if outlier_type == OUTLIER_TYPES[1]:
+        size = _number(row, "collective_group_size")
+        size_text = f" of {int(size)} applications" if _present(size) else ""
+        return (
+            f"Group reference: belongs to a mutually linked group{size_text} whose members sit closer "
+            "to each other than any of them sits to the ordinary portfolio, so the record is unusual "
+            "as part of a structure rather than on its own"
+        )
+    if _present(peer_score) and peer_score >= CONTEXTUAL_PEER_THRESHOLD and peer_column:
+        label = EVIDENCE_FEATURE_LABELS.get(
+            peer_column, peer_column.replace("_", " ").lower()
+        )
+        return (
+            f"Segment reference: {label} sits {peer_score:.1f} robust deviations from this "
+            "segment's median, so the value is ordinary for the portfolio but not for its peer group"
+        )
+    return (
+        "Combination reference: no single field passes "
+        f"{CONTEXTUAL_PEER_THRESHOLD:.0f} robust deviations from this segment's median, so "
+        f"{detector_count} multivariate detectors agree on the combination rather than on any one value"
+    )
 
 
 def _segment_reference(
@@ -493,7 +584,7 @@ def build_anomaly_investigation(
     anomaly_features: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Build one evidence-backed recommendation per targeted-review record."""
-    names = dict(zip(cluster_names["cluster_id"].astype(int), cluster_names["nama"]))
+    names = dict(zip(cluster_names["cluster_id"].astype(int), cluster_names["segment_name"]))
     required_density_fields = {"dbscan_sample_covered", "dbscan_sample_noise"}
     missing_density_fields = required_density_fields.difference(combined.columns)
     if missing_density_fields:
@@ -635,8 +726,12 @@ def build_anomaly_investigation(
             if queue_route == "Extreme single-axis value"
             else "Detector-consensus pattern"
         )
-        sampled_density_corroboration = _sampled_density_state(row)
+        sampled_density_corroboration = _density_state(row)
         outlier_type = _outlier_type(row)
+        peer_score, peer_column = _peer_relative_extreme(row, medians, scales)
+        typology_basis = _typology_basis(
+            outlier_type, row, peer_score, peer_column, len(methods)
+        )
 
         max_severity = max(e.severity for e in evidence)
         priority = (
@@ -674,7 +769,13 @@ def build_anomaly_investigation(
             "Queue Route": queue_route,
             "Anomaly Scope": scope,
             "Outlier Type": outlier_type,
-            "Sampled Density Corroboration": sampled_density_corroboration,
+            "Typology Basis": typology_basis,
+            "Peer Deviation Field": (
+                EVIDENCE_FEATURE_LABELS.get(peer_column, peer_column.replace("_", " ").lower())
+                if peer_column else ""
+            ),
+            "Peer Deviation": round(peer_score, 3) if _present(peer_score) else np.nan,
+            "Density Corroboration": sampled_density_corroboration,
             "Review Type": review_type,
             "Priority": priority,
             "Primary Driver": primary.driver,

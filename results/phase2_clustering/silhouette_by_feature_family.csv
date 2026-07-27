@@ -1,0 +1,6 @@
+feature_family,features,silhouette_alone
+Card history,4,0.8452324271202087
+Instalment delinquency,6,0.6848621368408203
+Relationship depth (counts),4,0.3469294309616089
+Affordability (amounts and ratios),6,0.264252632856369
+All 41 governed features together,41,0.15415066480636597

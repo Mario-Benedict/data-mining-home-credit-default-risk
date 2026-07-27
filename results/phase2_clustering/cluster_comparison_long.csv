@@ -1,31 +1,31 @@
 business_dimension,Segment,portfolio_sd
-Repayment burden,Lower-Intensity Credit Footprint,-0.3753561419728499
-Observed delinquency,Lower-Intensity Credit Footprint,-0.12045285226489415
-Revolving intensity,Lower-Intensity Credit Footprint,-0.37153662163475537
-Credit-history depth,Lower-Intensity Credit Footprint,-0.324490564473855
-Opaque external-score indicators,Lower-Intensity Credit Footprint,-0.0891082506687497
-Borrowing scale,Lower-Intensity Credit Footprint,-0.7454625841748164
-Repayment burden,Repayment-Stress History,0.049000781071497385
-Observed delinquency,Repayment-Stress History,3.299580942207754
-Revolving intensity,Repayment-Stress History,-0.1152677143894451
-Credit-history depth,Repayment-Stress History,0.1594233801173774
-Opaque external-score indicators,Repayment-Stress History,-0.05246102288739395
-Borrowing scale,Repayment-Stress History,-0.05041261236857053
-Repayment burden,History-Rich Credit User,-0.14305393838487876
-Observed delinquency,History-Rich Credit User,-0.00850662948203033
-Revolving intensity,History-Rich Credit User,-0.30411898235691875
-Credit-history depth,History-Rich Credit User,0.705523267964318
-Opaque external-score indicators,History-Rich Credit User,-0.09799423953918199
-Borrowing scale,History-Rich Credit User,-0.08594054621820005
-Repayment burden,Larger-Loan Affordability,0.42477831788651194
-Observed delinquency,Larger-Loan Affordability,-0.13393353123483281
-Revolving intensity,Larger-Loan Affordability,-0.374014875645223
-Credit-history depth,Larger-Loan Affordability,-0.26805127394129985
-Opaque external-score indicators,Larger-Loan Affordability,0.14422275122579245
-Borrowing scale,Larger-Loan Affordability,0.7485723520658358
-Repayment burden,Historical Card-Use Intensity,0.0026698963061045364
-Observed delinquency,Historical Card-Use Intensity,0.11318474544326519
-Revolving intensity,Historical Card-Use Intensity,1.962459561489629
-Credit-history depth,Historical Card-Use Intensity,0.6299761373358458
-Opaque external-score indicators,Historical Card-Use Intensity,-0.027397300916109524
-Borrowing scale,Historical Card-Use Intensity,0.05240446331336082
+Repayment burden,History-Rich Credit User,-0.1413607046750055
+Observed delinquency,History-Rich Credit User,-0.008766473993454038
+Revolving intensity,History-Rich Credit User,-0.3044320046529983
+Credit-history depth,History-Rich Credit User,0.7024679868740552
+Opaque external-score indicators,History-Rich Credit User,-0.1666596809399825
+Borrowing scale,History-Rich Credit User,-0.08362387872004799
+Repayment burden,Larger-Loan Affordability,0.4239245361065831
+Observed delinquency,Larger-Loan Affordability,-0.13386694970204105
+Revolving intensity,Larger-Loan Affordability,-0.37414604615200925
+Credit-history depth,Larger-Loan Affordability,-0.2706900198992618
+Opaque external-score indicators,Larger-Loan Affordability,0.14269650219352822
+Borrowing scale,Larger-Loan Affordability,0.7435747247093951
+Repayment burden,Lower-Intensity Credit Footprint,-0.3820566723206479
+Observed delinquency,Lower-Intensity Credit Footprint,-0.12062772671100738
+Revolving intensity,Lower-Intensity Credit Footprint,-0.371725553567856
+Credit-history depth,Lower-Intensity Credit Footprint,-0.3226831010733339
+Opaque external-score indicators,Lower-Intensity Credit Footprint,-0.043903612185651655
+Borrowing scale,Lower-Intensity Credit Footprint,-0.7544499502419522
+Repayment burden,Repayment-Stress History,0.0484044016473232
+Observed delinquency,Repayment-Stress History,3.299357980321814
+Revolving intensity,Repayment-Stress History,-0.11560840779249361
+Credit-history depth,Repayment-Stress History,0.15949411133216346
+Opaque external-score indicators,Repayment-Stress History,-0.07228114423708273
+Borrowing scale,Repayment-Stress History,-0.05144434487805569
+Repayment burden,Historical Card-Use Intensity,0.0027826464165572823
+Observed delinquency,Historical Card-Use Intensity,0.1131796911615341
+Revolving intensity,Historical Card-Use Intensity,1.9621920493993257
+Credit-history depth,Historical Card-Use Intensity,0.6298543346377428
+Opaque external-score indicators,Historical Card-Use Intensity,-0.058988394318900454
+Borrowing scale,Historical Card-Use Intensity,0.05258792586194725

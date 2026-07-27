@@ -1,0 +1,41 @@
+item,family,source_group,source_label,readable_label,evidence_direction,portfolio_share
+bureau_debt_high,bureau_debt,bureau_history,Bureau history,bureau debt at least 80% of bureau credit,concern,0.05811286859131801
+bureau_debt_low,bureau_debt,bureau_history,Bureau history,bureau debt below 30% of bureau credit,supportive,0.504579584847932
+bureau_debt_moderate,bureau_debt,bureau_history,Bureau history,bureau debt between 30% and 80% of bureau credit,concern,0.29571234087942627
+bureau_debt_not_observed,bureau_debt,bureau_history,Bureau history,bureau debt not observed,depth or absence,0.14159520568132378
+credit_file_deep,credit_file,bureau_history,Bureau history,credit file deep,neutral band,0.2207828662053866
+credit_file_established,credit_file,bureau_history,Bureau history,an established observed bureau credit file,neutral band,0.40597886345454803
+credit_file_none,credit_file,bureau_history,Bureau history,credit file none,depth or absence,0.14159520568132378
+credit_file_thin,credit_file,bureau_history,Bureau history,a thin observed bureau credit file,neutral band,0.23164306465874163
+card_history_not_observed,card_use,card_history,Card history,card history not observed,depth or absence,0.7093149569830599
+card_utilisation_high,card_use,card_history,Card history,observed average card utilisation of at least 80%,concern,0.03400654025908408
+card_utilisation_moderate,card_use,card_history,Card history,observed average card utilisation below 80%,neutral band,0.25667850275785603
+burden_20_to_35pct,burden,current_application_affordability,Current application affordability,annuity between 20% and 35% of income,neutral band,0.2896268122552666
+burden_over_35pct,burden,current_application_affordability,Current application affordability,annuity above 35% of income,concern,0.053891173457214635
+burden_under_20pct,burden,current_application_affordability,Current application affordability,annuity below 20% of income,supportive,0.6564820142875187
+credit_large,credit_size,current_application_affordability,Current application affordability,current-loan credit amount in the upper portfolio third,neutral band,0.3220389889264712
+credit_medium,credit_size,current_application_affordability,Current application affordability,current-loan credit amount in the middle portfolio third,neutral band,0.3439278045220418
+credit_small,credit_size,current_application_affordability,Current application affordability,current-loan credit amount in the lower portfolio third,neutral band,0.334033206551487
+income_q1,income,current_application_affordability,Current application affordability,income in the lowest portfolio quartile,neutral band,0.320088139113837
+income_q2,income,current_application_affordability,Current application affordability,income in the lower-middle portfolio quartile,neutral band,0.1808423741421173
+income_q3,income,current_application_affordability,Current application affordability,income in the upper-middle portfolio quartile,neutral band,0.2616272052322073
+income_q4,income,current_application_affordability,Current application affordability,income in the highest portfolio quartile,neutral band,0.23744228151183844
+leverage_3_to_6x,leverage,current_application_affordability,Current application affordability,current-loan credit amount between 3 and 6 times income,neutral band,0.3596637240179085
+leverage_over_6x,leverage,current_application_affordability,Current application affordability,current-loan credit amount above 6 times income,concern,0.16586995270241822
+leverage_under_3x,leverage,current_application_affordability,Current application affordability,current-loan credit amount below 3 times income,supportive,0.47446632327967325
+external_score_middle,external_score,external_score,External scores,available external scores in the middle band,neutral band,0.33316585030385537
+external_score_strong,external_score,external_score,External scores,available external scores in the upper band,supportive,0.33316585030385537
+external_score_unavailable,external_score,external_score,External scores,external score unavailable,depth or absence,0.0005024490884338466
+external_score_weak,external_score,external_score,External scores,available external scores in the lower band,concern,0.33316585030385537
+repayment_clean_observed,repayment_history,instalment_history,Instalment history,observed instalments with no recorded lateness,supportive,0.44839230326591906
+repayment_not_observed,repayment_history,instalment_history,Instalment history,repayment not observed,depth or absence,0.04678671176544891
+repayment_serious_late,repayment_history,instalment_history,Instalment history,observed instalments with lateness above 30 days,concern,0.06011424401061038
+repayment_some_late,repayment_history,instalment_history,Instalment history,observed instalments with some recorded lateness,concern,0.44470674095802165
+previous_deep,previous_depth,previous_application,Prior applications,previous deep,depth or absence,0.3972912660874935
+previous_none,previous_depth,previous_application,Prior applications,previous none,depth or absence,0.04883580581325175
+previous_one,previous_depth,previous_application,Prior applications,previous one,depth or absence,0.16970428485214242
+previous_two_to_four,previous_depth,previous_application,Prior applications,previous two to four,depth or absence,0.3841686432471123
+previous_approval_high,previous_outcome,previous_application,Prior applications,at least 75% of prior applications approved,supportive,0.5241863272094427
+previous_outcome_mixed,previous_outcome,previous_application,Prior applications,a mixed prior-application outcome,concern,0.3234901966288192
+previous_outcome_not_observed,previous_outcome,previous_application,Prior applications,previous outcome not observed,depth or absence,0.04883580581325175
+previous_refusals_repeated,previous_outcome,previous_application,Prior applications,at least 3 prior applications refused,concern,0.10348767034848634

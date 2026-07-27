@@ -1,52 +1,52 @@
 Review Type,Driver,records,mean_severity
-Affordability / repayment review,Card or POS arrears,4614,2.0
-Affordability / repayment review,Long instalment delay,3242,2.755706354102406
-Affordability / repayment review,Repeated underpayment,2423,2.0
-Affordability / repayment review,High card utilisation,1859,2.0
-Affordability / repayment review,Repeated severe instalment delays,1669,3.0
-Affordability / repayment review,Late payments in bureau history,1341,3.0
-Affordability / repayment review,High credit compared with income,1341,2.5831469052945564
-Affordability / repayment review,Repeated previous application refusals,1147,1.0
-Affordability / repayment review,Frequent instalment delays,1080,2.0
-Affordability / repayment review,Low combined external score,803,2.0
+Affordability / repayment review,Card or POS arrears,4559,2.0
+Affordability / repayment review,Long instalment delay,3170,2.7555205047318614
+Affordability / repayment review,Repeated underpayment,2395,2.0
+Affordability / repayment review,High card utilisation,1847,2.0
+Affordability / repayment review,Repeated severe instalment delays,1629,3.0
+Affordability / repayment review,Late payments in bureau history,1337,3.0
+Affordability / repayment review,High credit compared with income,1328,2.5903614457831323
+Affordability / repayment review,Repeated previous application refusals,1174,1.0
+Affordability / repayment review,Frequent instalment delays,1081,2.0
+Affordability / repayment review,Low combined external score,810,2.0
 Affordability / repayment review,Extreme longest instalment delay,762,3.0
 Affordability / repayment review,Extreme average previous-account card delay,671,3.0
-Affordability / repayment review,High payment burden,669,2.524663677130045
+Affordability / repayment review,High payment burden,670,2.523880597014925
 Affordability / repayment review,Extreme average previous-account POS or cash-loan delay,632,3.0
 Affordability / repayment review,Extreme severely late instalment share,557,3.0
 Affordability / repayment review,Extreme average severe-late share in bureau monthly history,472,3.0
-Affordability / repayment review,High bureau debt utilisation,448,2.0
+Affordability / repayment review,High bureau debt utilisation,435,2.0
 Affordability / repayment review,Extreme average late-payment share in bureau monthly history,423,3.0
 Affordability / repayment review,Extreme average previous-account card balance,275,3.0
 Affordability / repayment review,Extreme previous refusal count,213,3.0
 Affordability / repayment review,Extreme average instalment delay,160,3.0
-Data consistency check,Payment ratio needs checking,121,2.0
+Data consistency check,Payment ratio needs checking,126,2.0
 Data consistency check,Extreme average payment-to-due ratio,73,3.0
+Rare but plausible profile,Unusual instalment record count,25,1.0
+Rare but plausible profile,Unusual previous application count,21,1.0
 Affordability / repayment review,Extreme credit-to-income ratio,18,3.0
-Rare but plausible profile,Unusual instalment record count,17,1.0
 Affordability / repayment review,Extreme annuity-to-income ratio,16,3.0
 Affordability / repayment review,Extreme previous application count,15,3.0
-Rare but plausible profile,Unusual previous application count,15,1.0
+Rare but plausible profile,Unusual bureau record count,15,1.0
 Affordability / repayment review,Extreme bureau record count,13,3.0
-Rare but plausible profile,Unusual bureau record count,13,1.0
 Affordability / repayment review,Extreme bureau debt-to-credit ratio,10,3.0
 Rare but plausible profile,Extreme bureau record count,7,3.0
 Data consistency check,Extreme average previous-account POS or cash-loan delay,6,3.0
-Rare but plausible profile,Unusual reported income,6,1.0
 Data consistency check,Extreme average severe-late share in bureau monthly history,4,3.0
-Rare but plausible profile,Unusual annuity amount,3,1.0
-Rare but plausible profile,Unusual annuity-to-income ratio,3,1.0
+Rare but plausible profile,Unusual reported income,4,1.0
 Rare but plausible profile,Unusual average payment-to-due ratio,3,1.0
-Rare but plausible profile,Unusual average previous-account card balance,3,1.0
 Data consistency check,Extreme previous application count,2,3.0
 Data consistency check,Extreme previous refusal count,2,3.0
+Rare but plausible profile,Unusual annuity amount,2,1.0
+Rare but plausible profile,Unusual annuity-to-income ratio,2,1.0
 Rare but plausible profile,Unusual credit-to-annuity payment-size proxy,2,1.0
-Rare but plausible profile,Unusual maximum previous-account card utilisation,2,1.0
+Rare but plausible profile,Unusual current-loan credit amount,2,1.0
 Data consistency check,Extreme average previous-account card delay,1,3.0
 Data consistency check,Extreme longest instalment delay,1,3.0
 Rare but plausible profile,Extreme previous-account POS or cash-loan monthly record count,1,3.0
+Rare but plausible profile,Unusual average previous-account card balance,1,1.0
 Rare but plausible profile,Unusual bureau debt-to-credit ratio,1,1.0
 Rare but plausible profile,Unusual credit-to-income ratio,1,1.0
-Rare but plausible profile,Unusual current-loan credit amount,1,1.0
 Rare but plausible profile,Unusual late-instalment share,1,1.0
 Rare but plausible profile,Unusual longest instalment delay,1,1.0
+Rare but plausible profile,Unusual maximum previous-account card utilisation,1,1.0

@@ -1,6 +1,6 @@
 stage,remaining_rules,removed_at_stage,business_reason
-Candidate rules tested,4516,0,All mined rules before identity and evidence-source screening
-Cross-source patterns,689,3827,Retained compact patterns that connect separate evidence sources and include behaviour or history
-Business signals,151,538,"Retained concern, supportive, or conflicting evidence that gives a reviewer a concrete question"
-Unique business patterns,80,71,Collapsed duplicate item combinations before presentation selection
-Displayed for review,12,68,Selected a varied set for explanation; these are not lending policy rules
+Candidate rules tested,4492,0,All mined rules before identity and evidence-source screening
+Cross-source patterns,683,3809,Retained compact patterns that connect separate evidence sources and include behaviour or history
+Business signals,156,527,"Retained concern, supportive, or conflicting evidence that gives a reviewer a concrete question"
+Unique business patterns,76,80,Collapsed duplicate item combinations before presentation selection
+Displayed for review,12,64,Selected a varied set for explanation; these are not lending policy rules

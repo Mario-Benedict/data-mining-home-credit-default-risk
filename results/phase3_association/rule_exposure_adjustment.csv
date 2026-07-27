@@ -1,0 +1,13 @@
+rank,short_rule,Context,confidence,lift,exposure_variable,exposure_ratio,exposure_adjusted_confidence,exposure_adjusted_lift,exposure_bias_share
+1,external_score_strong → bureau_debt_low,History-Rich Credit User,0.6431079894644425,1.213075166035074,BUREAU_COUNT,0.8519646985358421,0.6583593777229577,1.2418433988156539,0.0
+2,card_utilisation_high → external_score_weak,Historical Card-Use Intensity,0.47059809013235043,1.3623641116808514,none (application-time value),1.0,0.4705980901323505,1.3623641116808516,0.0
+3,previous_refusals_repeated → repayment_some_late,Portfolio-wide,0.6008191385483346,1.3510457189247986,INST_COUNT,1.589394106109348,0.47363833406377875,1.0650576895763497,0.8146745963015534
+4,bureau_debt_high → external_score_weak,Lower-Intensity Credit Footprint,0.5591857902242966,1.4751345416548516,none (application-time value),1.0,0.5591857902242966,1.4751345416548516,0.0
+5,"bureau_debt_moderate, previous_refusals_repeated → external_score_weak",History-Rich Credit User,0.519940236754396,1.3353334019924066,none (application-time value),1.0,0.519940236754396,1.3353334019924066,0.0
+6,repayment_clean_observed → previous_outcome_mixed,Historical Card-Use Intensity,0.49193907544312815,1.2380531043681071,PREV_COUNT,0.884145871666634,0.5054677176105046,1.2721003640173194,0.0
+7,"burden_under_20pct, external_score_weak → bureau_debt_moderate",History-Rich Credit User,0.44738049963936793,1.2371335177276366,BUREAU_COUNT,1.105301897956104,0.43862473256835666,1.2129213472693898,0.10210353513186617
+8,"credit_large, previous_approval_high → external_score_strong",Historical Card-Use Intensity,0.41142165492957744,1.3225237356482127,none (application-time value),1.0,0.41142165492957744,1.3225237356482127,0.0
+9,"leverage_over_6x, repayment_clean_observed → previous_approval_high",Portfolio-wide,0.643860676130543,1.2283049799452008,PREV_COUNT,0.727793530728051,0.5119331279252475,0.9766243439629066,1.0
+10,"credit_large, repayment_clean_observed → external_score_strong",Portfolio-wide,0.42943821548490974,1.2889622843795414,none (application-time value),1.0,0.4294382154849098,1.2889622843795416,0.0
+11,"bureau_debt_moderate, external_score_strong → burden_under_20pct",Larger-Loan Affordability,0.513246605260659,1.2427784071000751,none (application-time value),1.0,0.513246605260659,1.2427784071000751,0.0
+12,"card_utilisation_moderate, previous_approval_high → repayment_some_late",Lower-Intensity Credit Footprint,0.4667041619797525,1.2705577655322908,INST_COUNT,1.6179270239455577,0.3449061732841718,0.9389743065227738,1.0

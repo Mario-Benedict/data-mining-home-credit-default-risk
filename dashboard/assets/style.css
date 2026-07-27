@@ -16,8 +16,12 @@
   --green: #4f7d65;
   --amber: #b98535;
   --red: #b5534c;
-  --rail-w: 232px;
-  --plot-height: 380px;
+  --rail-w: 304px;
+  --plot-height: 480px;
+  /* Generous cap so the content fills a wide canvas like a dashboard rather
+     than a document column, while still stopping charts from stretching
+     indefinitely on an ultrawide display. */
+  --content-w: 1560px;
   font-family: Inter, "Segoe UI", Arial, sans-serif;
 }
 
@@ -27,6 +31,8 @@ body {
   margin: 0;
   background: var(--canvas);
   color: var(--ink);
+  font-size: 16px;
+  line-height: 1.62;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -43,36 +49,36 @@ body {
   flex-direction: column;
   width: var(--rail-w);
   height: 100vh;
-  padding: 30px 0 22px;
+  padding: 36px 0 26px;
   border-right: 1px solid var(--line);
   background: var(--surface);
 }
 
-.rail-brand { padding: 0 26px 30px; }
+.rail-brand { padding: 0 30px 36px; }
 .rail-brand-name {
-  font-size: 15px;
+  font-size: 21px;
   font-weight: 650;
   letter-spacing: -.01em;
 }
 .rail-brand-sub {
-  margin-top: 3px;
+  margin-top: 4px;
   color: var(--faint);
-  font-size: 12px;
+  font-size: 15px;
 }
 
 .rail-nav { display: flex; flex-direction: column; }
 .rail-link {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: 14px;
   width: 100%;
-  padding: 11px 26px;
+  padding: 15px 30px;
   border: 0;
-  border-left: 2px solid transparent;
+  border-left: 3px solid transparent;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 14px;
+  font-size: 18px;
   text-align: left;
   cursor: pointer;
   transition: color .12s ease, border-color .12s ease;
@@ -84,9 +90,9 @@ body {
   font-weight: 600;
 }
 .rail-num {
-  min-width: 16px;
+  min-width: 22px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .rail-link.active .rail-num { color: var(--accent); }
@@ -94,57 +100,60 @@ body {
 
 .rail-meta {
   margin-top: auto;
-  padding: 20px 26px 0;
+  padding: 26px 30px 0;
   border-top: 1px solid var(--hairline);
 }
-.rail-stat { display: flex; flex-direction: column; margin-top: 11px; }
+.rail-stat { display: flex; flex-direction: column; margin-top: 15px; }
 .rail-stat span:first-child {
-  font-size: 14px;
+  font-size: 21px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-.rail-stat span:last-child { color: var(--faint); font-size: 11px; }
+.rail-stat span:last-child { color: var(--faint); font-size: 14px; }
 
 /* ---------- canvas ---------- */
 
 .canvas { margin-left: var(--rail-w); min-height: 100vh; }
 .section-content { min-height: 620px; }
-.tab-section { max-width: 1360px; padding: 52px max(3.5vw, 30px) 64px; }
+.tab-section {
+  max-width: var(--content-w);
+  padding: 46px 40px 68px;
+}
 
-.section-heading { max-width: 760px; margin-bottom: 34px; }
+.section-heading { max-width: 980px; margin-bottom: 34px; }
 .section-kicker {
   margin-bottom: 10px;
   color: var(--faint);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: .12em;
   text-transform: uppercase;
 }
 .section-heading h2 {
   margin: 0;
-  font-size: clamp(25px, 2.7vw, 34px);
+  font-size: clamp(32px, 2.4vw, 42px);
   font-weight: 650;
   letter-spacing: -.025em;
   line-height: 1.15;
 }
 .section-heading p {
-  margin: 11px 0 0;
+  margin: 13px 0 0;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 17.5px;
   line-height: 1.6;
 }
 
 .subsection-title {
-  margin: 44px 0 6px;
-  font-size: 18px;
+  margin: 48px 0 8px;
+  font-size: 22px;
   font-weight: 650;
   letter-spacing: -.015em;
 }
 .subsection-lede {
-  max-width: 720px;
-  margin: 0 0 18px;
+  max-width: 920px;
+  margin: 0 0 20px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.6;
 }
 
@@ -162,19 +171,19 @@ body {
 }
 .metric-card {
   min-width: 0;
-  padding: 18px 20px;
+  padding: 24px 26px;
   background: var(--surface);
 }
 .metric-label {
   color: var(--faint);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: .05em;
   text-transform: uppercase;
 }
 .metric-value {
   margin: 12px 0 5px;
-  font-size: clamp(23px, 2.3vw, 28px);
+  font-size: clamp(32px, 2.2vw, 38px);
   font-weight: 650;
   letter-spacing: -.03em;
   font-variant-numeric: tabular-nums;
@@ -182,44 +191,49 @@ body {
 .tone-green .metric-value { color: var(--green); }
 .tone-amber .metric-value { color: var(--amber); }
 .tone-red .metric-value { color: var(--red); }
-.metric-note { color: var(--faint); font-size: 11px; line-height: 1.4; }
+.metric-note { color: var(--faint); font-size: 13px; line-height: 1.5; }
 
 /* ---------- panels ---------- */
 
 .two-col {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-top: 14px;
+  gap: 18px;
+  margin-top: 18px;
   align-items: stretch;
 }
 .panel {
   min-width: 0;
-  margin-top: 14px;
-  padding: 20px;
+  margin-top: 18px;
+  padding: 26px 28px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
 }
 .two-col > .panel { margin-top: 0; }
-.panel-title { font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+.panel-title { font-size: 19px; font-weight: 650; letter-spacing: -.015em; }
 .panel-caption {
-  max-width: 780px;
-  margin-top: 6px;
+  max-width: 1000px;
+  margin-top: 8px;
   color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.6;
 }
 .plot-wrap, .plot-scroll { min-width: 0; margin-top: 10px; }
 .plot-scroll { overflow-x: auto; overscroll-behavior-inline: contain; }
 .plot-scroll-mobile { min-width: 0; }
 .plot { width: 100%; }
-.plot-compact { --plot-height: 300px; }
-.plot-standard { --plot-height: 375px; }
-.plot-tall { --plot-height: 450px; }
-.plot-rules { --plot-height: 700px; }
-.plot-profile { --plot-height: 600px; }
-.plot-map { --plot-height: 435px; }
+.plot-compact { --plot-height: 390px; }
+.plot-standard { --plot-height: 495px; }
+.plot-tall { --plot-height: 580px; }
+.plot-rules { --plot-height: 820px; }
+.plot-profile { --plot-height: 720px; }
+.plot-map { --plot-height: 545px; }
+
+/* A compact plot is sized for a half-width column. Spanning a full-width panel
+   it letterboxes badly (1035x330 reads as a strip), so it gets more height when
+   it is not sharing a row. */
+.panel-wide .plot-compact { --plot-height: 500px; }
 .evidence-image {
   display: block;
   width: 100%;
@@ -233,28 +247,28 @@ body {
 .segment-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .segment-card {
   min-width: 0;
-  padding: 17px;
+  padding: 20px;
   border: 1px solid var(--line);
   border-top: 2px solid var(--segment-color);
   border-radius: 10px;
   background: var(--surface);
 }
 .segment-card-head { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
-.segment-card h3 { margin: 0; font-size: 14px; font-weight: 650; letter-spacing: -.01em; }
-.segment-count { color: var(--faint); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.segment-card h3 { margin: 0; font-size: 16.5px; font-weight: 650; letter-spacing: -.01em; }
+.segment-count { color: var(--faint); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .segment-card > p {
-  min-height: 52px;
-  margin: 11px 0;
+  min-height: 58px;
+  margin: 12px 0;
   color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.55;
 }
 .segment-line {
   display: grid;
-  grid-template-columns: 46px 1fr;
-  gap: 7px;
-  margin-top: 8px;
-  font-size: 11.5px;
+  grid-template-columns: 56px 1fr;
+  gap: 8px;
+  margin-top: 9px;
+  font-size: 13px;
   line-height: 1.45;
 }
 .segment-line strong { color: var(--ink); font-weight: 600; }
@@ -264,22 +278,22 @@ body {
 
 .finding {
   display: grid;
-  grid-template-columns: 44px 1fr;
-  gap: 16px;
+  grid-template-columns: 50px 1fr;
+  gap: 18px;
   align-items: start;
-  max-width: 900px;
-  margin: 46px 0 4px;
+  max-width: 1180px;
+  margin: 50px 0 4px;
 }
 .finding-num {
-  padding-top: 2px;
+  padding-top: 4px;
   color: var(--accent);
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   letter-spacing: .04em;
 }
 .finding-headline {
-  font-size: 18px;
+  font-size: 23px;
   font-weight: 650;
   letter-spacing: -.02em;
   line-height: 1.35;
@@ -293,7 +307,7 @@ body {
 }
 .finding-fact {
   display: grid;
-  grid-template-columns: 118px minmax(0, 1fr);
+  grid-template-columns: 140px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
   padding: 13px 0;
@@ -301,7 +315,7 @@ body {
 }
 .finding-fact-label {
   color: var(--faint);
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 650;
   letter-spacing: .07em;
   line-height: 1.45;
@@ -309,8 +323,8 @@ body {
 }
 .finding-fact-text {
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 15.5px;
+  line-height: 1.65;
 }
 .finding-fact-action {
   padding-inline: 12px;
@@ -321,15 +335,15 @@ body {
 .finding-fact-action .finding-fact-text { color: var(--ink); }
 .finding-evidence {
   display: grid;
-  grid-template-columns: 110px 1fr;
+  grid-template-columns: 132px 1fr;
   gap: 12px;
-  margin-top: 10px;
+  margin-top: 12px;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: 13.5px;
   line-height: 1.5;
 }
 .evidence-label {
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 650;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -346,7 +360,7 @@ body {
 }
 .scope-card {
   min-width: 0;
-  padding: 18px 20px;
+  padding: 22px 24px;
   border: 1px solid var(--line);
   border-left: 2px solid var(--scope-color);
   border-radius: 10px;
@@ -358,29 +372,29 @@ body {
   justify-content: space-between;
   gap: 10px;
 }
-.scope-name { font-size: 14px; font-weight: 650; letter-spacing: -.01em; }
+.scope-name { font-size: 16.5px; font-weight: 650; letter-spacing: -.01em; }
 .scope-count {
   color: var(--scope-color);
-  font-size: 15px;
+  font-size: 18.5px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
 .scope-what {
-  margin: 11px 0 8px;
-  font-size: 12.5px;
+  margin: 12px 0 9px;
+  font-size: 15px;
   font-weight: 550;
   line-height: 1.5;
 }
-.scope-why { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.6; }
+.scope-why { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.6; }
 
 /* ---------- misc blocks ---------- */
 
-.method-box { display: grid; place-content: center; min-height: 300px; padding: 20px; text-align: center; }
-.method-value { font-size: 36px; font-weight: 650; letter-spacing: -.04em; }
-.method-box p { max-width: 380px; margin: 9px auto 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.method-box { display: grid; place-content: center; min-height: 340px; padding: 24px; text-align: center; }
+.method-value { font-size: 46px; font-weight: 650; letter-spacing: -.04em; }
+.method-box p { max-width: 380px; margin: 12px auto 0; color: var(--muted); font-size: 15.5px; line-height: 1.6; }
 
 .table-shell { max-width: 100%; margin-top: 12px; overflow-x: auto; }
-.table-instruction { margin: 10px 0 0; color: var(--muted); font-size: 12.5px; }
+.table-instruction { margin: 12px 0 0; color: var(--muted); font-size: 14.5px; }
 .record-detail {
   min-height: 86px;
   margin-top: 16px;
@@ -390,12 +404,12 @@ body {
   border-radius: 8px;
   background: var(--tint);
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 15.5px;
+  line-height: 1.65;
 }
 .record-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 13px; }
-.record-id { color: var(--ink); font-size: 16px; font-weight: 650; }
-.record-priority { color: var(--ink); font-size: 12px; font-weight: 600; }
+.record-id { color: var(--ink); font-size: 20px; font-weight: 650; }
+.record-priority { color: var(--ink); font-size: 14.5px; font-weight: 600; }
 .record-meta {
   display: flex;
   flex-wrap: wrap;
@@ -404,7 +418,7 @@ body {
   padding: 8px 10px;
   border-radius: 8px;
   background: var(--tint);
-  font-size: 12.5px;
+  font-size: 15px;
   color: var(--muted);
 }
 .record-meta strong { color: var(--ink); font-weight: 600; }
@@ -414,8 +428,8 @@ body {
 
 .guardrail {
   display: grid;
-  grid-template-columns: 168px 1fr;
-  gap: 18px;
+  grid-template-columns: 200px 1fr;
+  gap: 20px;
   align-items: start;
   margin-top: 18px;
   padding: 18px 20px;
@@ -423,8 +437,8 @@ body {
   border-left: 2px solid var(--amber);
   border-radius: 10px;
   background: var(--surface);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 15.5px;
+  line-height: 1.65;
 }
 .guardrail strong { font-weight: 650; }
 .guardrail span { color: var(--muted); }
@@ -433,10 +447,11 @@ footer {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 26px max(3.5vw, 30px);
+  max-width: var(--content-w);
+  padding: 26px 40px;
   border-top: 1px solid var(--line);
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: 13.5px;
 }
 
 /* ---------- responsive ---------- */
@@ -467,15 +482,17 @@ footer {
     /* Tight enough that all six fit a 375px viewport without side-scrolling. */
     flex: 1 1 auto;
     justify-content: center;
-    padding: 14px 6px;
+    padding: 16px 10px;
     border-left: 0;
     border-bottom: 2px solid transparent;
-    font-size: 13px;
+    font-size: 15px;
     white-space: nowrap;
   }
   .rail-link.active { border-left-color: transparent; border-bottom-color: var(--accent); }
   .rail-num { display: none; }
   .canvas { margin-left: 0; }
+  .tab-section { max-width: none; }
+  footer { max-width: none; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .two-col { grid-template-columns: 1fr; }
   .segment-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -493,8 +510,8 @@ footer {
   .rail-link {
     min-width: 0;
     flex: 1 1 0;
-    padding: 11px 2px;
-    font-size: 10.5px;
+    padding: 12px 4px;
+    font-size: 12px;
     white-space: normal;
   }
   .rail-label { line-height: 1.1; text-align: center; }
@@ -512,6 +529,7 @@ footer {
   .panel-title { font-size: 14px; }
   .panel-caption { font-size: 12px; }
   .plot-compact { --plot-height: 270px; }
+  .panel-wide .plot-compact { --plot-height: 270px; }
   .plot-standard { --plot-height: 320px; }
   .plot-tall { --plot-height: 360px; }
   .plot-rules { --plot-height: 620px; }

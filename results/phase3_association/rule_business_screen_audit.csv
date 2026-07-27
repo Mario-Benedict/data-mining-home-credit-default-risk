@@ -1,7 +1,7 @@
 reason,rules
-decorative_antecedent,364
-history_depth_or_missingness_context,124
-supportive_convergence,54
-adverse_convergence,54
+decorative_antecedent,346
+history_depth_or_missingness_context,131
+adverse_convergence,57
+supportive_convergence,53
 low_information_band,50
-mixed_evidence_reconcile,43
+mixed_evidence_reconcile,46

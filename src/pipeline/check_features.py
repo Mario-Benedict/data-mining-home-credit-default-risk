@@ -15,6 +15,10 @@ Two checks, both fully unsupervised:
     2. Unsupervised entropy, to document whether a field varies enough to form
        a useful segment axis.
 
+A third kind of removal exists that neither measure can express: a field whose
+imputation manufactures a mass point duplicating its own missingness flag.
+EXT_SOURCE_1 is the only such case and it is recorded explicitly below.
+
 The portfolio is analyzed as one unlabeled population: the out-of-scope
 outcome column is dropped at ingestion, so no audit here reads it either.
 
@@ -140,6 +144,31 @@ def feature_selection_decisions(
             "business_reason": reason,
             "target_used_for_decision": False,
         })
+
+    # EXT_SOURCE_1 is dropped from the mining matrices for a reason neither
+    # correlation nor entropy can express, so it is recorded explicitly rather
+    # than silently vanishing from the audit: median imputation for 54.43% of
+    # applications parks the majority of the portfolio on one coordinate, and
+    # those are exactly the rows where FLAG_EXT_SOURCE_1_MISSING equals 1.
+    rows.append({
+        "feature": "EXT_SOURCE_1",
+        "status": "drop",
+        "decision_basis": "Imputation-induced duplication of its own missingness flag",
+        "normalized_unsupervised_entropy": np.nan,
+        "dominant_value_share": np.nan,
+        "n_unique": 0,
+        "high_corr_partner": "FLAG_EXT_SOURCE_1_MISSING",
+        "abs_corr": np.nan,
+        "business_reason": (
+            "Unavailable for 54.43% of applications. Imputing the median places more than half "
+            "the portfolio on one identical coordinate, exactly the rows the missingness flag "
+            "already marks, so the axis double-weights one fact and creates an artificial dense "
+            "mode that density and covariance detectors read as the most normal region. The flag "
+            "is retained; the observed values remain in features_business for rule mining and "
+            "record review, where they are masked by the flag rather than imputed."
+        ),
+        "target_used_for_decision": False,
+    })
 
     dropped = list(dict.fromkeys(COLS_DROP_AVG + COLS_DROP_MEDI + COLS_DROP_REDUNDANT))
     available_train = pd.read_csv(PATHS["application_train"], nrows=0).columns

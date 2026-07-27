@@ -1,2 +1,3 @@
-comparison,adjusted_rand_index,normalized_mutual_information
-K-Means vs sampled Ward nearest-centre assignment,0.5841541848342071,0.5925408420463917
+comparison,rows_clustered,adjusted_rand_index,normalized_mutual_information,largest_group_share,smallest_group_share,role
+K-Means vs BIRCH over all applications,356255,0.25718819532013604,0.36667728084498347,0.7459319869194818,0.005855356416050301,Primary hierarchical validation; every application participates
+K-Means vs sampled Ward nearest-centre assignment,5000,0.4355159627406476,0.5400488882492345,0.5236642292739752,0.016620117612384386,Contrast only; nearest-centre assignment biases this upward
